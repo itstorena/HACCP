@@ -6,9 +6,12 @@ import type { Database } from '@/types/database'
  * MAI esporre lato client.
  */
 export function createAdminClient() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://kqpguexaexwtfwizsaxq.supabase.co'
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || 'placeholder-service-key'
+
   return createSupabaseClient<Database>(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    url,
+    serviceKey,
     {
       auth: {
         autoRefreshToken: false,
