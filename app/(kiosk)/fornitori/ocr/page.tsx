@@ -1,5 +1,6 @@
 'use client'
-import { useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { ChangeEvent } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
@@ -22,6 +23,11 @@ function createEmptyItem(): ParsedSupplierDocumentItem {
   }
 }
 
+function isLocalhost() {
+  if (typeof window === 'undefined') return false
+  return ['localhost', '127.0.0.1', '::1'].includes(window.location.hostname)
+}
+
 export default function FornitoreOcrPage() {
   const router = useRouter()
   const supabase = createClient()
@@ -39,20 +45,43 @@ export default function FornitoreOcrPage() {
   const [deliveryDate, setDeliveryDate] = useState(() => new Date().toISOString().split('T')[0])
   const [riskLevel, setRiskLevel] = useState<'low' | 'medium' | 'high'>('medium')
   const [items, setItems] = useState<ParsedSupplierDocumentItem[]>([])
+  const [cameraActive, setCameraActive] = useState(false)
+  const videoRef = useRef<HTMLVideoElement>(null)
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const cameraStreamRef = useRef<MediaStream | null>(null)
+  const cameraInputRef = useRef<HTMLInputElement>(null)
+  const galleryInputRef = useRef<HTMLInputElement>(null)
+  const imagePreviewRef = useRef('')
 
   const canSave = useMemo(
     () => supplierName.trim() && deliveryDate && items.some(item => item.product_name.trim() && item.expiry_date),
     [supplierName, deliveryDate, items]
   )
 
-  const handleFile = async (file?: File) => {
+  const stopDocumentCamera = useCallback(() => {
+    cameraStreamRef.current?.getTracks().forEach(track => track.stop())
+    cameraStreamRef.current = null
+    if (videoRef.current) videoRef.current.srcObject = null
+    setCameraActive(false)
+  }, [])
+
+  useEffect(() => {
+    return () => {
+      stopDocumentCamera()
+      if (imagePreviewRef.current) URL.revokeObjectURL(imagePreviewRef.current)
+    }
+  }, [stopDocumentCamera])
+
+  const handleFile = useCallback(async (file?: File) => {
     if (!file) return
     if (!file.type.startsWith('image/')) {
-      addToast({ type: 'error', message: 'Carica una foto o immagine del documento. Per PDF usa una foto/screenshot della pagina.' })
+      addToast({ type: 'error', message: 'Carica una foto o immagine del documento. Per PDF usa una foto o screenshot della pagina.' })
       return
     }
 
-    setImagePreview(URL.createObjectURL(file))
+    if (imagePreviewRef.current) URL.revokeObjectURL(imagePreviewRef.current)
+    imagePreviewRef.current = URL.createObjectURL(file)
+    setImagePreview(imagePreviewRef.current)
     setStatus('reading')
     setProgress('Preparazione OCR...')
 
@@ -81,8 +110,80 @@ export default function FornitoreOcrPage() {
     } catch (error) {
       console.error(error)
       setStatus('idle')
-      addToast({ type: 'error', message: 'OCR non riuscito. Prova con una foto più nitida e ben illuminata.' })
+      addToast({ type: 'error', message: 'OCR non riuscito. Prova con una foto piu nitida e ben illuminata.' })
     }
+  }, [addToast])
+
+  const startDocumentCamera = useCallback(async () => {
+    if (typeof window === 'undefined') return
+    if (!window.isSecureContext && !isLocalhost()) {
+      addToast({ type: 'error', message: 'La camera richiede HTTPS. Usa il sito Vercel oppure carica una foto.' })
+      return
+    }
+    if (!navigator.mediaDevices?.getUserMedia) {
+      addToast({ type: 'error', message: 'Camera non disponibile in questo browser. Usa scatto da app foto o galleria.' })
+      return
+    }
+
+    try {
+      stopDocumentCamera()
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: false,
+        video: {
+          facingMode: { ideal: 'environment' },
+          width: { ideal: 1920 },
+          height: { ideal: 1080 },
+        },
+      })
+      cameraStreamRef.current = stream
+      setCameraActive(true)
+      await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream
+        await videoRef.current.play()
+      }
+    } catch (error) {
+      console.error(error)
+      stopDocumentCamera()
+      addToast({ type: 'error', message: 'Impossibile aprire la camera. Controlla i permessi o usa una foto.' })
+    }
+  }, [addToast, stopDocumentCamera])
+
+  const captureDocumentPhoto = useCallback(() => {
+    const video = videoRef.current
+    const canvas = canvasRef.current
+    if (!video || !canvas || video.readyState < 2) {
+      addToast({ type: 'error', message: 'Camera non pronta. Attendi un istante e riprova.' })
+      return
+    }
+
+    const width = video.videoWidth || 1280
+    const height = video.videoHeight || 720
+    canvas.width = width
+    canvas.height = height
+    const context = canvas.getContext('2d')
+    if (!context) {
+      addToast({ type: 'error', message: 'Acquisizione immagine non disponibile.' })
+      return
+    }
+
+    context.drawImage(video, 0, 0, width, height)
+    canvas.toBlob(blob => {
+      if (!blob) {
+        addToast({ type: 'error', message: 'Foto non acquisita. Riprova.' })
+        return
+      }
+      const file = new File([blob], `documento-fornitore-${Date.now()}.jpg`, { type: 'image/jpeg' })
+      stopDocumentCamera()
+      void handleFile(file)
+    }, 'image/jpeg', 0.92)
+  }, [addToast, handleFile, stopDocumentCamera])
+
+  const handleFileInput = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.currentTarget.files?.[0]
+    event.currentTarget.value = ''
+    stopDocumentCamera()
+    void handleFile(file)
   }
 
   const updateItem = (index: number, patch: Partial<ParsedSupplierDocumentItem>) => {
@@ -186,25 +287,65 @@ export default function FornitoreOcrPage() {
     <div>
       <div className="page-header">
         <div>
-          <h1 className="page-title">📄 OCR Fattura / DDT</h1>
-          <p className="page-subtitle">Acquisisci otticamente il documento e conferma materiali, lotti e scadenze</p>
+          <h1 className="page-title">OCR Fattura / DDT</h1>
+          <p className="page-subtitle">Acquisisci il documento e conferma materiali, lotti e scadenze</p>
         </div>
-        <Link href="/fornitori" className="btn btn--ghost">← Torna ai fornitori</Link>
+        <Link href="/fornitori" className="btn btn--ghost">Torna ai fornitori</Link>
       </div>
 
       <div className="card" style={{ marginBottom: 'var(--space-6)' }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(260px, 360px) 1fr', gap: 'var(--space-6)' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(260px, 380px) 1fr', gap: 'var(--space-6)' }}>
           <div>
             <div className="form-group">
               <label className="form-label">Foto documento</label>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
+                <button type="button" className="btn btn--primary" onClick={startDocumentCamera}>
+                  Apri camera
+                </button>
+                <button type="button" className="btn btn--secondary" onClick={() => galleryInputRef.current?.click()}>
+                  Carica foto
+                </button>
+              </div>
+              <button type="button" className="btn btn--secondary" onClick={() => cameraInputRef.current?.click()}>
+                Scatta con app foto
+              </button>
               <input
-                className="input"
+                ref={cameraInputRef}
                 type="file"
-                accept="image/*"
+                accept="image/*,.jpg,.jpeg,.png,.webp"
                 capture="environment"
-                onChange={event => handleFile(event.target.files?.[0])}
+                style={{ display: 'none' }}
+                onChange={handleFileInput}
+              />
+              <input
+                ref={galleryInputRef}
+                type="file"
+                accept="image/*,.jpg,.jpeg,.png,.webp"
+                style={{ display: 'none' }}
+                onChange={handleFileInput}
               />
             </div>
+
+            {cameraActive && (
+              <div style={{ marginTop: 'var(--space-4)', display: 'grid', gap: 'var(--space-3)' }}>
+                <video
+                  ref={videoRef}
+                  playsInline
+                  muted
+                  style={{ width: '100%', aspectRatio: '3 / 4', objectFit: 'cover', borderRadius: 'var(--radius-md)', border: '1px solid var(--color-border)', background: '#000' }}
+                />
+                <canvas ref={canvasRef} style={{ display: 'none' }} />
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
+                  <button type="button" className="btn btn--primary" onClick={captureDocumentPhoto}>
+                    Acquisisci foto
+                  </button>
+                  <button type="button" className="btn btn--secondary" onClick={stopDocumentCamera}>
+                    Chiudi camera
+                  </button>
+                </div>
+              </div>
+            )}
+
             {imagePreview && (
               <img
                 src={imagePreview}
@@ -265,7 +406,7 @@ export default function FornitoreOcrPage() {
           <div className="page-header" style={{ marginBottom: 'var(--space-4)' }}>
             <div>
               <h2 style={{ fontSize: 'var(--text-lg)' }}>Testo OCR</h2>
-              <p className="page-subtitle">Confidenza: {ocrConfidence === null ? '—' : `${Math.round(ocrConfidence)}%`}</p>
+              <p className="page-subtitle">Confidenza: {ocrConfidence === null ? '-' : `${Math.round(ocrConfidence)}%`}</p>
             </div>
             <button className="btn btn--secondary" onClick={reparseText}>Rianalizza testo</button>
           </div>
@@ -291,7 +432,6 @@ export default function FornitoreOcrPage() {
 
         {items.length === 0 ? (
           <div className="empty-state">
-            <div className="empty-state__icon">📄</div>
             <div className="empty-state__title">Nessuna riga proposta</div>
             <p className="empty-state__desc">Carica una foto del documento o aggiungi righe manualmente.</p>
           </div>
@@ -303,8 +443,8 @@ export default function FornitoreOcrPage() {
                   <th>Prodotto</th>
                   <th>Lotto</th>
                   <th>Scadenza</th>
-                  <th>Quantità</th>
-                  <th>Unità</th>
+                  <th>Quantita</th>
+                  <th>Unita</th>
                   <th>Note</th>
                   <th>Azioni</th>
                 </tr>

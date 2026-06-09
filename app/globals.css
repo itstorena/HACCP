@@ -854,6 +854,19 @@ tbody tr:hover {
   overflow: hidden;
 }
 
+a.kpi-card {
+  color: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+a.kpi-card:hover {
+  color: inherit;
+  transform: translateY(-2px);
+  border-color: var(--color-border-light);
+  box-shadow: var(--shadow-md);
+}
+
 .kpi-card::before {
   content: '';
   position: absolute;
@@ -963,27 +976,92 @@ tbody tr:hover {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: var(--space-3);
-  padding: var(--space-6);
+  gap: var(--space-2);
+  padding: var(--space-5);
   background: white;
   color: #000;
   border: 2px dashed #ccc;
   border-radius: var(--radius-lg);
-  width: fit-content;
+  width: min(100%, 340px);
   font-family: var(--font-sans);
+}
+
+.qr-label--product {
+  width: min(100%, 380px);
+}
+
+.qr-label__eyebrow {
+  font-size: 0.65rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #333;
 }
 
 .qr-label__title {
   font-size: var(--text-lg);
-  font-weight: 700;
+  font-weight: 800;
   color: #000;
   text-align: center;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
 }
 
 .qr-label__info {
   font-size: var(--text-sm);
   color: #555;
   text-align: center;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+}
+
+.qr-label__image {
+  width: 210px;
+  height: 210px;
+  object-fit: contain;
+}
+
+.qr-label__grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 10px;
+  width: 100%;
+  font-size: 0.72rem;
+}
+
+.qr-label__row {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.qr-label__row--full {
+  grid-column: 1 / -1;
+}
+
+.qr-label__row span {
+  color: #666;
+  font-size: 0.62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.qr-label__row strong {
+  color: #000;
+  font-size: 0.76rem;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.qr-label__token {
+  width: 100%;
+  font-size: 0.6rem;
+  color: #666;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  line-height: 1.25;
+  text-align: center;
+  overflow-wrap: anywhere;
 }
 
 @media print {
@@ -1180,5 +1258,120 @@ tbody tr:hover {
     background: transparent !important;
     border: 1px solid #000000 !important;
     color: #000000 !important;
+  }
+}
+
+@media print {
+  body.print-product-label,
+  body.print-qr-label {
+    background: #ffffff !important;
+  }
+
+  body.print-product-label *,
+  body.print-qr-label * {
+    visibility: hidden !important;
+  }
+
+  body.print-product-label .modal-overlay,
+  body.print-product-label .modal-overlay *,
+  body.print-qr-label .modal-overlay,
+  body.print-qr-label .modal-overlay * {
+    visibility: visible !important;
+  }
+
+  body.print-product-label .modal-overlay,
+  body.print-qr-label .modal-overlay {
+    display: flex !important;
+    position: fixed !important;
+    inset: 0 !important;
+    align-items: flex-start !important;
+    justify-content: center !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+    backdrop-filter: none !important;
+  }
+
+  body.print-product-label .modal,
+  body.print-qr-label .modal {
+    display: block !important;
+    width: auto !important;
+    max-width: none !important;
+    max-height: none !important;
+    overflow: visible !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+  }
+
+  body.print-product-label .modal__header,
+  body.print-product-label .label-print-actions,
+  body.print-qr-label .modal__header,
+  body.print-qr-label .label-print-actions {
+    display: none !important;
+    visibility: hidden !important;
+  }
+
+  body.print-product-label .qr-label,
+  body.print-qr-label .qr-label {
+    display: flex !important;
+    visibility: visible !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    border: 1px solid #000000 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    page-break-inside: avoid;
+  }
+
+  body.print-product-label .qr-label {
+    width: 70mm !important;
+    min-height: 48mm !important;
+    padding: 4mm !important;
+    gap: 2mm !important;
+  }
+
+  body.print-product-label .qr-label__image {
+    width: 28mm !important;
+    height: 28mm !important;
+  }
+
+  body.print-product-label .qr-label__title {
+    font-size: 11pt !important;
+  }
+
+  body.print-product-label .qr-label__grid {
+    font-size: 7pt !important;
+    gap: 1.5mm 2mm !important;
+  }
+
+  body.print-product-label .qr-label__token {
+    font-size: 5.5pt !important;
+  }
+
+  body.print-qr-label .qr-label {
+    width: 48mm !important;
+    min-height: 48mm !important;
+    padding: 3mm !important;
+    gap: 2mm !important;
+    justify-content: center !important;
+  }
+
+  body.print-qr-label .qr-label__eyebrow,
+  body.print-qr-label .qr-label__description,
+  body.print-qr-label .qr-label__grid,
+  body.print-qr-label .qr-label__token {
+    display: none !important;
+  }
+
+  body.print-qr-label .qr-label__title {
+    max-width: 42mm !important;
+    font-size: 8pt !important;
+  }
+
+  body.print-qr-label .qr-label__image {
+    width: 34mm !important;
+    height: 34mm !important;
   }
 }

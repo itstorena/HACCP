@@ -87,36 +87,36 @@ export default function DashboardPage() {
         </div>
       ) : (
         <div className="kpi-grid" style={{ marginBottom: 'var(--space-8)' }}>
-          <div className={`kpi-card kpi-card--${stats.activeBlastCycles > 0 ? 'primary' : 'success'}`}>
+          <Link href="/abbattimento" className={`kpi-card kpi-card--${stats.activeBlastCycles > 0 ? 'primary' : 'success'}`}>
             <div className="kpi-label">Cicli Attivi</div>
             <div className="kpi-value">{stats.activeBlastCycles}</div>
             <div className="kpi-sub">abbattitore in corso</div>
-          </div>
-          <div className={`kpi-card kpi-card--${stats.expiringBatches > 0 ? 'danger' : 'success'}`}>
+          </Link>
+          <Link href="/lotti" className={`kpi-card kpi-card--${stats.expiringBatches > 0 ? 'danger' : 'success'}`}>
             <div className="kpi-label">Lotti in Scadenza</div>
             <div className="kpi-value">{stats.expiringBatches}</div>
             <div className="kpi-sub">nelle prossime 48h</div>
-          </div>
-          <div className="kpi-card kpi-card--info">
+          </Link>
+          <Link href="/fornitori" className="kpi-card kpi-card--info">
             <div className="kpi-label">Fornitori Oggi</div>
             <div className="kpi-value">{stats.todaySuppliers}</div>
             <div className="kpi-sub">registrati oggi</div>
-          </div>
-          <div className={`kpi-card kpi-card--${stats.nonCompliantToday > 0 ? 'danger' : 'success'}`}>
+          </Link>
+          <Link href="/non-conformita" className={`kpi-card kpi-card--${stats.nonCompliantToday > 0 ? 'danger' : 'success'}`}>
             <div className="kpi-label">NC Aperte</div>
             <div className="kpi-value">{stats.openNonConformities}</div>
             <div className="kpi-sub">{stats.nonCompliantToday} cicli non conformi oggi</div>
-          </div>
-          <div className="kpi-card kpi-card--info">
+          </Link>
+          <Link href="/temperature" className="kpi-card kpi-card--info">
             <div className="kpi-label">Temperature</div>
             <div className="kpi-value">{stats.todayTemperatureLogs}</div>
             <div className="kpi-sub">registrazioni oggi</div>
-          </div>
-          <div className="kpi-card kpi-card--success">
+          </Link>
+          <Link href="/controlli" className="kpi-card kpi-card--success">
             <div className="kpi-label">Controlli</div>
             <div className="kpi-value">{stats.todayChecks}</div>
             <div className="kpi-sub">checklist oggi</div>
-          </div>
+          </Link>
         </div>
       )}
 

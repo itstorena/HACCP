@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState, useCallback, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import QRCode from 'qrcode'
 import { createClient } from '@/lib/supabase/client'
@@ -9,15 +9,23 @@ import type { Database } from '@/types/database'
 import type { RealtimePostgresChangesPayload } from '@supabase/supabase-js'
 
 type Batch = Database['public']['Tables']['internal_batches']['Row']
+type LabelPrintMode = 'full' | 'qr'
 
 const EXPIRY_CONFIG = {
   expired: { label: 'Scaduto', cls: 'badge--danger' },
-  expiring: { label: 'In Scadenza', cls: 'badge--warning' },
+  expiring: { label: 'In scadenza', cls: 'badge--warning' },
   ok: { label: 'Valido', cls: 'badge--success' },
 }
 
+const BATCH_STATUS_LABELS: Record<Batch['batch_status'], string> = {
+  valid: 'Valido',
+  blocked: 'Bloccato',
+  used: 'Usato',
+  discarded: 'Scartato',
+}
+
 export default function LottiPage() {
-  const supabase = createClient()
+  const supabase = useMemo(() => createClient(), [])
   const [batches, setBatches] = useState<Batch[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedBatch, setSelectedBatch] = useState<Batch | null>(null)
@@ -43,36 +51,48 @@ export default function LottiPage() {
       .limit(100)
     setBatches(data ?? [])
     setLoading(false)
-  }, [])
+  }, [supabase])
 
   useEffect(() => {
-    load()
+    void load()
     const channel = supabase
       .channel('internal-batches-realtime')
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'internal_batches' },
         (payload: RealtimePostgresChangesPayload<Batch>) => {
-          if (payload.eventType === 'INSERT') setBatches(p => [payload.new, ...p])
-          else if (payload.eventType === 'UPDATE') setBatches(p => p.map(b => b.id === payload.new.id ? payload.new : b))
+          if (payload.eventType === 'INSERT') setBatches(prev => [payload.new, ...prev])
+          else if (payload.eventType === 'UPDATE') setBatches(prev => prev.map(batch => batch.id === payload.new.id ? payload.new : batch))
         }
       )
       .subscribe()
-    return () => { supabase.removeChannel(channel) }
-  }, [load])
+    return () => { void supabase.removeChannel(channel) }
+  }, [load, supabase])
 
   const showQR = useCallback(async (batch: Batch) => {
     setSelectedBatch(batch)
     const url = await QRCode.toDataURL(batch.qr_code_token, {
-      width: 200,
+      width: 240,
       margin: 2,
       color: { dark: '#000000', light: '#ffffff' },
     })
     setQrUrl(url)
   }, [])
 
-  const printLabel = useCallback(() => {
-    window.print()
+  const printLabel = useCallback((mode: LabelPrintMode) => {
+    const className = mode === 'qr' ? 'print-qr-label' : 'print-product-label'
+    const clearPrintMode = () => {
+      document.body.classList.remove('print-product-label', 'print-qr-label')
+      window.removeEventListener('afterprint', clearPrintMode)
+    }
+
+    document.body.classList.remove('print-product-label', 'print-qr-label')
+    document.body.classList.add(className)
+    window.addEventListener('afterprint', clearPrintMode)
+    window.setTimeout(() => {
+      window.print()
+      window.setTimeout(clearPrintMode, 1000)
+    }, 50)
   }, [])
 
   const openEditBatch = (batch: Batch) => {
@@ -118,12 +138,12 @@ export default function LottiPage() {
     <div>
       <div className="page-header">
         <div>
-          <h1 className="page-title">🏷️ Lotti Interni</h1>
-          <p className="page-subtitle">Preparazioni interne con etichetta QR — {batches.length} registrati</p>
+          <h1 className="page-title">Lotti Interni</h1>
+          <p className="page-subtitle">Preparazioni interne con etichetta QR - {batches.length} registrati</p>
         </div>
-        <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
-          <button className="btn btn--secondary" onClick={() => window.print()}>🖨️ Stampa registro</button>
-          <Link href="/lotti/scansiona" className="btn btn--secondary">📷 Scansiona QR</Link>
+        <div style={{ display: 'flex', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
+          <button className="btn btn--secondary" onClick={() => window.print()}>Stampa registro</button>
+          <Link href="/lotti/scansiona" className="btn btn--secondary">Scansiona QR</Link>
           <Link href="/lotti/nuovo" className="btn btn--primary">+ Nuovo Lotto</Link>
         </div>
       </div>
@@ -134,14 +154,13 @@ export default function LottiPage() {
         </div>
       ) : batches.length === 0 ? (
         <div className="empty-state">
-          <div className="empty-state__icon">🏷️</div>
           <div className="empty-state__title">Nessun lotto interno</div>
           <p className="empty-state__desc">Crea il primo lotto interno con etichetta QR</p>
           <Link href="/lotti/nuovo" className="btn btn--primary">+ Crea primo lotto</Link>
         </div>
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 'var(--space-4)' }}>
-          {batches.map((batch) => {
+          {batches.map(batch => {
             const status = getBatchExpiryStatus(batch.expires_at)
             const cfg = EXPIRY_CONFIG[status]
             return (
@@ -149,10 +168,10 @@ export default function LottiPage() {
                 key={batch.id}
                 className="card"
                 style={{ cursor: 'pointer', transition: 'all var(--transition-fast)' }}
-                onMouseOver={e => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--color-primary)' }}
-                onMouseOut={e => { (e.currentTarget as HTMLElement).style.borderColor = 'var(--color-border)' }}
+                onMouseOver={event => { event.currentTarget.style.borderColor = 'var(--color-primary)' }}
+                onMouseOut={event => { event.currentTarget.style.borderColor = 'var(--color-border)' }}
               >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 'var(--space-3)' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 'var(--space-3)', marginBottom: 'var(--space-3)' }}>
                   <h3 style={{ fontSize: 'var(--text-lg)', fontWeight: 700 }}>{batch.name}</h3>
                   <span className={`badge ${cfg.cls}`}>{cfg.label}</span>
                 </div>
@@ -162,27 +181,27 @@ export default function LottiPage() {
                   </p>
                 )}
                 <div style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', display: 'flex', flexDirection: 'column', gap: 'var(--space-1)', marginBottom: 'var(--space-4)' }}>
-                  <span>📅 Preparato: {formatDateTime(batch.prepared_at)}</span>
-                  <span>⏰ Scade: {formatDateTime(batch.expires_at)}</span>
+                  <span>Preparato: {formatDateTime(batch.prepared_at)}</span>
+                  <span>Scade: {formatDateTime(batch.expires_at)}</span>
                   {(batch.quantity || batch.unit) && (
-                    <span>⚖️ Quantità: {batch.quantity ?? '—'} {batch.unit ?? ''}</span>
+                    <span>Quantita: {batch.quantity ?? '-'} {batch.unit ?? ''}</span>
                   )}
                   {batch.source_supplier_batch_ids.length > 0 && (
-                    <span>🔗 Materie prime collegate: {batch.source_supplier_batch_ids.length}</span>
+                    <span>Materie prime collegate: {batch.source_supplier_batch_ids.length}</span>
                   )}
                   {batch.allergen_notes && (
-                    <span>⚠️ Allergeni: {batch.allergen_notes}</span>
+                    <span>Allergeni: {batch.allergen_notes}</span>
                   )}
                   <code style={{ fontSize: '0.7rem', background: 'var(--color-surface-2)', padding: '2px 6px', borderRadius: 4, width: 'fit-content' }}>
-                    {batch.qr_code_token.slice(0, 16)}…
+                    {batch.qr_code_token.slice(0, 16)}...
                   </code>
                 </div>
                 <div className="no-print" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-2)' }}>
                   <button
                     className="btn btn--secondary btn--sm"
-                    onClick={() => showQR(batch)}
+                    onClick={() => { void showQR(batch) }}
                   >
-                    🏷️ Etichetta
+                    Etichetta
                   </button>
                   <button
                     className="btn btn--secondary btn--sm"
@@ -197,40 +216,56 @@ export default function LottiPage() {
         </div>
       )}
 
-      {/* QR Modal */}
       {selectedBatch && (
         <div className="modal-overlay" onClick={() => setSelectedBatch(null)}>
-          <div className="modal" onClick={e => e.stopPropagation()} style={{ maxWidth: 400 }}>
+          <div className="modal" onClick={event => event.stopPropagation()} style={{ maxWidth: 460 }}>
             <div className="modal__header">
-              <h2 className="modal__title">🏷️ Etichetta QR</h2>
-              <button className="modal__close" onClick={() => setSelectedBatch(null)}>×</button>
+              <h2 className="modal__title">Etichetta semilavorato</h2>
+              <button className="modal__close" onClick={() => setSelectedBatch(null)}>x</button>
             </div>
 
-            {/* QR Label - printable */}
-            <div ref={qrRef} className="qr-label" style={{ margin: '0 auto', background: 'white', borderRadius: 'var(--radius-lg)' }}>
+            <div ref={qrRef} className="qr-label qr-label--product" style={{ margin: '0 auto', background: 'white', borderRadius: 'var(--radius-lg)' }}>
+              <div className="qr-label__eyebrow">Prodotto semilavorato</div>
               <div className="qr-label__title">{selectedBatch.name}</div>
               {selectedBatch.description && (
-                <div className="qr-label__info">{selectedBatch.description}</div>
+                <div className="qr-label__info qr-label__description">{selectedBatch.description}</div>
               )}
-              {qrUrl && <img src={qrUrl} alt="QR Code" style={{ width: 200, height: 200 }} />}
-              <div className="qr-label__info">
-                Prep.: {formatDateTime(selectedBatch.prepared_at)}<br />
-                Scad.: {formatDateTime(selectedBatch.expires_at)}
+              {qrUrl && <img className="qr-label__image" src={qrUrl} alt="QR Code" />}
+              <div className="qr-label__grid">
+                <div className="qr-label__row">
+                  <span>Preparato</span>
+                  <strong>{formatDateTime(selectedBatch.prepared_at)}</strong>
+                </div>
+                <div className="qr-label__row">
+                  <span>Scadenza</span>
+                  <strong>{formatDateTime(selectedBatch.expires_at)}</strong>
+                </div>
+                {(selectedBatch.quantity || selectedBatch.unit) && (
+                  <div className="qr-label__row">
+                    <span>Quantita</span>
+                    <strong>{selectedBatch.quantity ?? '-'} {selectedBatch.unit ?? ''}</strong>
+                  </div>
+                )}
+                <div className="qr-label__row">
+                  <span>Stato</span>
+                  <strong>{BATCH_STATUS_LABELS[selectedBatch.batch_status]}</strong>
+                </div>
                 {selectedBatch.allergen_notes && (
-                  <>
-                    <br />
-                    Allergeni: {selectedBatch.allergen_notes}
-                  </>
+                  <div className="qr-label__row qr-label__row--full">
+                    <span>Allergeni</span>
+                    <strong>{selectedBatch.allergen_notes}</strong>
+                  </div>
                 )}
               </div>
-              <div style={{ fontSize: '0.65rem', color: '#888', fontFamily: 'monospace' }}>
-                {selectedBatch.qr_code_token}
+              <div className="qr-label__token">
+                Token: {selectedBatch.qr_code_token}
               </div>
             </div>
 
-            <div style={{ display: 'flex', gap: 'var(--space-3)', marginTop: 'var(--space-6)', justifyContent: 'flex-end' }}>
+            <div className="label-print-actions" style={{ display: 'flex', gap: 'var(--space-3)', marginTop: 'var(--space-6)', justifyContent: 'flex-end', flexWrap: 'wrap' }}>
               <button className="btn btn--secondary" onClick={() => setSelectedBatch(null)}>Chiudi</button>
-              <button className="btn btn--primary" onClick={printLabel}>🖨️ Stampa Etichetta</button>
+              <button className="btn btn--secondary" onClick={() => printLabel('qr')}>Stampa solo QR</button>
+              <button className="btn btn--primary" onClick={() => printLabel('full')}>Stampa etichetta</button>
             </div>
           </div>
         </div>
@@ -241,7 +276,7 @@ export default function LottiPage() {
           <div className="modal" onClick={event => event.stopPropagation()}>
             <div className="modal__header">
               <h2 className="modal__title">Modifica lotto interno</h2>
-              <button className="modal__close" onClick={() => setEditingBatch(null)}>×</button>
+              <button className="modal__close" onClick={() => setEditingBatch(null)}>x</button>
             </div>
 
             <div className="form-group">
@@ -272,17 +307,17 @@ export default function LottiPage() {
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 'var(--space-4)', marginTop: 'var(--space-4)' }}>
               <div className="form-group">
-                <label className="form-label">Quantità</label>
+                <label className="form-label">Quantita</label>
                 <input type="number" step="0.01" className="input" value={editForm.quantity} onChange={event => setEditForm(prev => ({ ...prev, quantity: event.target.value }))} />
               </div>
               <div className="form-group">
-                <label className="form-label">Unità</label>
+                <label className="form-label">Unita</label>
                 <input className="input" value={editForm.unit} onChange={event => setEditForm(prev => ({ ...prev, unit: event.target.value }))} />
               </div>
               <div className="form-group">
                 <label className="form-label">Attivo</label>
                 <select className="input" value={String(editForm.is_active)} onChange={event => setEditForm(prev => ({ ...prev, is_active: event.target.value === 'true' }))}>
-                  <option value="true">Sì</option>
+                  <option value="true">Si</option>
                   <option value="false">No</option>
                 </select>
               </div>

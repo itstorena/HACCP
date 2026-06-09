@@ -12,6 +12,7 @@ const navItems = [
   { href: '/manager/non-conformita', label: 'Non Conformità', icon: '⚠️' },
   { href: '/manager/report', label: 'Report HACCP', icon: '📄' },
   { href: '/manager/staff', label: 'Staff', icon: '👤' },
+  { href: '/manager/audit-log', label: 'Audit Log', icon: 'Log' },
 ]
 
 export default function ManagerLayout({ children }: { children: React.ReactNode }) {

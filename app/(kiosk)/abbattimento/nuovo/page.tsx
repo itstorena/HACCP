@@ -8,6 +8,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useStaffStore } from '@/store/staffStore'
 import { useToastStore } from '@/store/toastStore'
 import { BLAST_CYCLE_TARGETS } from '@/lib/utils/compliance'
+import { writeAuditLog } from '@/lib/utils/auditLog'
 import Link from 'next/link'
 import type { Database } from '@/types/database'
 
@@ -78,25 +79,38 @@ export default function NuovoAbbattimentoPage() {
 
   const onSubmit = async (data: FormData) => {
     setLoading(true)
-    const { error } = await (supabase.from('blast_chiller_logs') as any).insert({
-      cycle_type: data.cycle_type,
-      profile_id: data.profile_id || null,
-      internal_batch_id: data.internal_batch_id,
-      start_temp: data.start_temp,
-      target_temp: target.targetTemp,
-      target_time_minutes: target.minutes,
-      product_category: selectedProfile?.product_category ?? data.product_category ?? null,
-      probe_code: data.probe_code || null,
-      quantity: data.quantity ?? null,
-      unit: data.unit || null,
-      operator_id: currentStaff?.id ?? null,
-      notes: data.notes ?? null,
-    })
+    const { data: cycle, error } = await (supabase.from('blast_chiller_logs') as any)
+      .insert({
+        cycle_type: data.cycle_type,
+        profile_id: data.profile_id || null,
+        internal_batch_id: data.internal_batch_id,
+        start_temp: data.start_temp,
+        target_temp: target.targetTemp,
+        target_time_minutes: target.minutes,
+        product_category: selectedProfile?.product_category ?? data.product_category ?? null,
+        probe_code: data.probe_code || null,
+        quantity: data.quantity ?? null,
+        unit: data.unit || null,
+        operator_id: currentStaff?.id ?? null,
+        notes: data.notes ?? null,
+      })
+      .select()
+      .single()
 
     if (error) {
       addToast({ type: 'error', message: `Errore: ${error.message}` })
       setLoading(false)
       return
+    }
+
+    if (cycle) {
+      await writeAuditLog(supabase, {
+        tableName: 'blast_chiller_logs',
+        recordId: cycle.id,
+        action: 'insert',
+        staff: currentStaff,
+        afterData: cycle,
+      })
     }
 
     addToast({ type: 'success', message: '🧊 Ciclo abbattimento avviato!' })

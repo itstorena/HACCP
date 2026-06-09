@@ -6,6 +6,7 @@ import { useStaffStore } from '@/store/staffStore'
 import { useToastStore } from '@/store/toastStore'
 import { formatDateTime } from '@/lib/utils/formatting'
 import { CHECK_TYPE_LABELS } from '@/lib/utils/haccp'
+import { writeAuditLog } from '@/lib/utils/auditLog'
 import type { Database, OperationalCheckType } from '@/types/database'
 
 type OperationalCheck = Database['public']['Tables']['operational_checks']['Row']
@@ -50,6 +51,7 @@ export default function ControlliPage() {
     is_compliant: true,
     corrective_action: '',
   })
+  const canDeleteRecords = currentStaff?.role === 'manager'
 
   const load = async () => {
     const today = new Date().toISOString().split('T')[0]
@@ -109,6 +111,16 @@ export default function ControlliPage() {
       addToast({ type: 'error', message: `Errore: ${error.message}` })
       setSaving(false)
       return
+    }
+
+    if (data) {
+      await writeAuditLog(supabase, {
+        tableName: 'operational_checks',
+        recordId: data.id,
+        action: 'insert',
+        staff: currentStaff,
+        afterData: data,
+      })
     }
 
     if (!form.is_compliant && data) {
@@ -205,9 +217,67 @@ export default function ControlliPage() {
       }
     }
 
+    await writeAuditLog(supabase, {
+      tableName: 'operational_checks',
+      recordId: editingCheck.id,
+      action: 'update',
+      staff: currentStaff,
+      beforeData: editingCheck,
+      afterData: {
+        check_type: editForm.check_type,
+        area: editForm.area.trim(),
+        item: editForm.item.trim(),
+        expected_result: editForm.expected_result.trim() || null,
+        actual_result: editForm.actual_result.trim() || null,
+        is_compliant: editForm.is_compliant,
+        corrective_action: editForm.is_compliant ? null : editForm.corrective_action.trim(),
+      },
+    })
+
     addToast({ type: 'success', message: 'Controllo aggiornato.' })
     setEditingCheck(null)
     await load()
+    setSaving(false)
+  }
+
+  const handleDeleteCheck = async (check: OperationalCheck) => {
+    if (!canDeleteRecords) {
+      addToast({ type: 'error', message: 'Eliminazione consentita solo a manager o amministratore.' })
+      return
+    }
+
+    const confirmed = window.confirm(`Eliminare il controllo "${check.item}" del ${formatDateTime(check.checked_at)}? Usa questa funzione solo per errori umani di inserimento.`)
+    if (!confirmed) return
+
+    setSaving(true)
+    await writeAuditLog(supabase, {
+      tableName: 'operational_checks',
+      recordId: check.id,
+      action: 'delete',
+      staff: currentStaff,
+      beforeData: check,
+      afterData: { reason: 'Eliminazione per errore umano confermata dall operatore' },
+    })
+
+    await (supabase.from('non_conformities') as any)
+      .delete()
+      .eq('related_table', 'operational_checks')
+      .eq('related_id', check.id)
+
+    const { error } = await supabase
+      .from('operational_checks')
+      .delete()
+      .eq('id', check.id)
+
+    if (error) {
+      addToast({ type: 'error', message: `Eliminazione non riuscita: ${error.message}` })
+      setSaving(false)
+      return
+    }
+
+    addToast({ type: 'success', message: 'Controllo eliminato.' })
+    setChecks(prev => prev.filter(item => item.id !== check.id))
+    if (editingCheck?.id === check.id) setEditingCheck(null)
     setSaving(false)
   }
 
@@ -340,9 +410,16 @@ export default function ControlliPage() {
                   </td>
                   <td style={{ color: 'var(--color-text-muted)' }}>{check.corrective_action ?? '—'}</td>
                   <td className="no-print">
-                    <button className="btn btn--secondary btn--sm" onClick={() => openEditCheck(check)}>
-                      Modifica
-                    </button>
+                    <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
+                      <button className="btn btn--secondary btn--sm" onClick={() => openEditCheck(check)}>
+                        Modifica
+                      </button>
+                      {canDeleteRecords && (
+                        <button className="btn btn--danger btn--sm" onClick={() => handleDeleteCheck(check)} disabled={saving}>
+                          Elimina
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -406,11 +483,18 @@ export default function ControlliPage() {
               </div>
             )}
 
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-3)', marginTop: 'var(--space-6)' }}>
-              <button className="btn btn--secondary" onClick={() => setEditingCheck(null)}>Annulla</button>
-              <button className="btn btn--primary" onClick={handleUpdateCheck} disabled={saving}>
-                {saving ? 'Salvataggio...' : 'Salva modifiche'}
-              </button>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 'var(--space-3)', marginTop: 'var(--space-6)', flexWrap: 'wrap' }}>
+              {canDeleteRecords ? (
+                <button className="btn btn--danger" onClick={() => handleDeleteCheck(editingCheck)} disabled={saving}>
+                  Elimina
+                </button>
+              ) : <span />}
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-3)' }}>
+                <button className="btn btn--secondary" onClick={() => setEditingCheck(null)}>Annulla</button>
+                <button className="btn btn--primary" onClick={handleUpdateCheck} disabled={saving}>
+                  {saving ? 'Salvataggio...' : 'Salva modifiche'}
+                </button>
+              </div>
             </div>
           </div>
         </div>

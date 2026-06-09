@@ -1,8 +1,10 @@
 'use client'
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
+import type { FormEvent } from 'react'
 import Link from 'next/link'
 import { formatDateTime } from '@/lib/utils/formatting'
 import { getBatchExpiryStatus } from '@/lib/utils/compliance'
+import type { Html5Qrcode } from 'html5-qrcode'
 
 interface BatchInfo {
   id: string
@@ -14,54 +16,52 @@ interface BatchInfo {
   prepared_by: { first_name: string; last_name: string } | null
 }
 
+function isLocalhost() {
+  if (typeof window === 'undefined') return false
+  return ['localhost', '127.0.0.1', '::1'].includes(window.location.hostname)
+}
+
+function waitForPaint() {
+  return new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
+}
+
 export default function ScansionaPage() {
   const [scanning, setScanning] = useState(false)
   const [result, setResult] = useState<BatchInfo | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
-  const scannerRef = useRef<HTMLDivElement>(null)
-  const scannerInstanceRef = useRef<unknown>(null)
+  const [manualToken, setManualToken] = useState('')
+  const scannerInstanceRef = useRef<Html5Qrcode | null>(null)
+  const qrFileInputRef = useRef<HTMLInputElement>(null)
 
-  const startScanner = async () => {
-    setScanning(true)
-    setResult(null)
-    setError(null)
+  const stopActiveScanner = useCallback(async () => {
+    const scanner = scannerInstanceRef.current
+    scannerInstanceRef.current = null
+    if (!scanner) return
 
     try {
-      // Dynamic import per evitare SSR issues
-      const { Html5QrcodeScanner } = await import('html5-qrcode')
-      const scanner = new Html5QrcodeScanner(
-        'qr-reader',
-        { fps: 10, qrbox: { width: 250, height: 250 } },
-        false
-      )
-      scannerInstanceRef.current = scanner
+      if (scanner.isScanning) await scanner.stop()
+    } catch {}
 
-      scanner.render(
-        async (decodedText: string) => {
-          scanner.clear()
-          setScanning(false)
-          await lookupToken(decodedText.trim())
-        },
-        (err: unknown) => { /* scan in progress, ignore */ }
-      )
-    } catch (e) {
-      setError('Impossibile avviare la camera. Verifica i permessi.')
-      setScanning(false)
-    }
-  }
+    try {
+      scanner.clear()
+    } catch {}
+  }, [])
 
-  const stopScanner = async () => {
-    if (scannerInstanceRef.current) {
-      try {
-        await (scannerInstanceRef.current as { clear: () => Promise<void> }).clear()
-      } catch {}
-    }
+  const stopScanner = useCallback(async () => {
+    await stopActiveScanner()
     setScanning(false)
-  }
+  }, [stopActiveScanner])
 
-  const lookupToken = async (token: string) => {
+  const lookupToken = useCallback(async (token: string) => {
+    if (!token) {
+      setError('Token QR vuoto o non leggibile.')
+      return
+    }
+
     setLoading(true)
+    setError(null)
+    setResult(null)
     try {
       const res = await fetch(`/api/qr/${encodeURIComponent(token)}`)
       const data = await res.json()
@@ -71,55 +71,170 @@ export default function ScansionaPage() {
         setError(`Lotto non trovato per token: ${token}`)
       }
     } catch {
-      setError('Errore di rete durante la ricerca del lotto')
+      setError('Errore di rete durante la ricerca del lotto.')
     } finally {
       setLoading(false)
     }
+  }, [])
+
+  const startScanner = useCallback(async () => {
+    setResult(null)
+    setError(null)
+
+    if (typeof window === 'undefined') return
+    if (!window.isSecureContext && !isLocalhost()) {
+      setError('La camera del telefono richiede HTTPS. Usa il sito Vercel o carica una foto del QR.')
+      return
+    }
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setError('Camera non disponibile in questo browser. Puoi comunque caricare una foto del QR.')
+      return
+    }
+
+    try {
+      await stopActiveScanner()
+      setScanning(true)
+      await waitForPaint()
+
+      const { Html5Qrcode } = await import('html5-qrcode')
+      const scanner = new Html5Qrcode('qr-reader')
+      scannerInstanceRef.current = scanner
+      let handled = false
+
+      await scanner.start(
+        { facingMode: { ideal: 'environment' } },
+        {
+          fps: 10,
+          qrbox: (viewfinderWidth: number, viewfinderHeight: number) => {
+            const edge = Math.floor(Math.min(viewfinderWidth, viewfinderHeight) * 0.72)
+            const size = Math.max(220, Math.min(edge, 320))
+            return { width: size, height: size }
+          },
+          aspectRatio: 1.7777778,
+          disableFlip: false,
+        },
+        async (decodedText: string) => {
+          if (handled) return
+          handled = true
+          await stopScanner()
+          await lookupToken(decodedText.trim())
+        },
+        () => {}
+      )
+    } catch (scanError) {
+      console.error(scanError)
+      await stopActiveScanner()
+      setScanning(false)
+      setError('Impossibile avviare la camera. Controlla i permessi o usa una foto del QR.')
+    }
+  }, [lookupToken, stopActiveScanner, stopScanner])
+
+  const scanQrFromFile = useCallback(async (file?: File) => {
+    if (!file) return
+    if (!file.type.startsWith('image/')) {
+      setError('Carica una foto o immagine del QR code.')
+      return
+    }
+
+    setLoading(true)
+    setError(null)
+    setResult(null)
+
+    try {
+      await stopScanner()
+      const { Html5Qrcode } = await import('html5-qrcode')
+      const fileScanner = new Html5Qrcode('qr-file-reader')
+      const decodedText = await fileScanner.scanFile(file, false)
+      try {
+        fileScanner.clear()
+      } catch {}
+      await lookupToken(decodedText.trim())
+    } catch (fileError) {
+      console.error(fileError)
+      setError('QR non leggibile dalla foto. Prova con un inquadramento piu nitido.')
+    } finally {
+      setLoading(false)
+    }
+  }, [lookupToken, stopScanner])
+
+  const submitManualToken = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    await stopScanner()
+    await lookupToken(manualToken.trim())
   }
 
   useEffect(() => {
-    return () => { stopScanner() }
-  }, [])
+    return () => { void stopActiveScanner() }
+  }, [stopActiveScanner])
 
   const expiryStatus = result ? getBatchExpiryStatus(result.expires_at) : null
   const statusConfig = {
-    expired: { cls: 'badge--danger', label: '⚠️ SCADUTO' },
-    expiring: { cls: 'badge--warning', label: '⏰ In Scadenza' },
-    ok: { cls: 'badge--success', label: '✅ Valido' },
+    expired: { cls: 'badge--danger', label: 'Scaduto' },
+    expiring: { cls: 'badge--warning', label: 'In scadenza' },
+    ok: { cls: 'badge--success', label: 'Valido' },
   }
 
   return (
     <div style={{ maxWidth: 560, margin: '0 auto' }}>
       <div className="page-header">
         <div>
-          <h1 className="page-title">📷 Scansiona QR</h1>
+          <h1 className="page-title">Scansione QR</h1>
           <p className="page-subtitle">Verifica rapidamente un lotto interno</p>
         </div>
-        <Link href="/lotti" className="btn btn--ghost">← Torna indietro</Link>
+        <Link href="/lotti" className="btn btn--ghost">Torna indietro</Link>
       </div>
+
+      <input
+        ref={qrFileInputRef}
+        type="file"
+        accept="image/*,.jpg,.jpeg,.png,.webp"
+        capture="environment"
+        style={{ display: 'none' }}
+        onChange={event => {
+          const file = event.currentTarget.files?.[0]
+          event.currentTarget.value = ''
+          void scanQrFromFile(file)
+        }}
+      />
+      <div id="qr-file-reader" style={{ display: 'none' }} />
 
       {!scanning && !result && (
         <div className="card" style={{ textAlign: 'center', padding: 'var(--space-12)' }}>
-          <div style={{ fontSize: '4rem', marginBottom: 'var(--space-4)' }}>📷</div>
           <h2 style={{ marginBottom: 'var(--space-2)' }}>Scanner QR</h2>
           <p style={{ marginBottom: 'var(--space-6)' }}>
-            Posiziona il QR code dell'etichetta davanti alla camera
+            Inquadra il QR dell'etichetta oppure carica una foto se il browser blocca la camera.
           </p>
-          <button className="btn btn--primary btn--lg" onClick={startScanner}>
-            Avvia Camera
-          </button>
+          <div style={{ display: 'grid', gap: 'var(--space-3)' }}>
+            <button className="btn btn--primary btn--lg" onClick={startScanner}>
+              Avvia camera
+            </button>
+            <button className="btn btn--secondary btn--lg" onClick={() => qrFileInputRef.current?.click()}>
+              Leggi QR da foto
+            </button>
+          </div>
+          <form onSubmit={submitManualToken} style={{ display: 'grid', gap: 'var(--space-3)', marginTop: 'var(--space-6)' }}>
+            <input
+              className="input"
+              value={manualToken}
+              onChange={event => setManualToken(event.target.value)}
+              placeholder="Token QR manuale"
+            />
+            <button className="btn btn--secondary" type="submit">
+              Cerca token
+            </button>
+          </form>
         </div>
       )}
 
       {scanning && (
         <div className="card">
-          <div id="qr-reader" ref={scannerRef} style={{ width: '100%' }} />
+          <div id="qr-reader" style={{ width: '100%', minHeight: 320 }} />
           <button
             className="btn btn--secondary btn--full"
             style={{ marginTop: 'var(--space-4)' }}
-            onClick={stopScanner}
+            onClick={() => { void stopScanner() }}
           >
-            ✕ Annulla
+            Annulla
           </button>
         </div>
       )}
@@ -141,10 +256,15 @@ export default function ScansionaPage() {
           flexDirection: 'column',
           gap: 'var(--space-3)',
         }}>
-          <strong>❌ {error}</strong>
-          <button className="btn btn--secondary btn--sm" style={{ width: 'fit-content' }} onClick={startScanner}>
-            Riprova
-          </button>
+          <strong>{error}</strong>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 'var(--space-3)' }}>
+            <button className="btn btn--secondary btn--sm" onClick={startScanner}>
+              Riprova camera
+            </button>
+            <button className="btn btn--secondary btn--sm" onClick={() => qrFileInputRef.current?.click()}>
+              Usa foto
+            </button>
+          </div>
         </div>
       )}
 
@@ -179,10 +299,10 @@ export default function ScansionaPage() {
           </div>
           <div style={{ display: 'flex', gap: 'var(--space-3)', marginTop: 'var(--space-5)' }}>
             <button className="btn btn--secondary" onClick={() => { setResult(null); setError(null) }}>
-              ← Torna indietro
+              Torna indietro
             </button>
             <button className="btn btn--primary" onClick={startScanner}>
-              📷 Nuova Scansione
+              Nuova scansione
             </button>
           </div>
         </div>

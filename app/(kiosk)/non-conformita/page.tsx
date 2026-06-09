@@ -12,6 +12,7 @@ import {
   STATUS_BADGE_CLASS,
   STATUS_LABELS,
 } from '@/lib/utils/haccp'
+import { writeAuditLog } from '@/lib/utils/auditLog'
 export type NonConformitySource = 'receiving' | 'blast_chiller' | 'temperature' | 'cleaning' | 'lot' | 'allergen' | 'pest' | 'maintenance' | 'other'
 export type NonConformitySeverity = 'low' | 'medium' | 'high' | 'critical'
 export type NonConformityStatus = 'open' | 'in_progress' | 'closed' | 'void'
@@ -60,6 +61,7 @@ export default function NonConformitaPage() {
     preventive_action: '',
     manager_notes: '',
   })
+  const canDeleteRecords = currentStaff?.role === 'manager'
 
   const load = async () => {
     const { data } = await (supabase.from('non_conformities') as any)
@@ -83,19 +85,32 @@ export default function NonConformitaPage() {
     }
 
     setSaving(true)
-    const { error } = await (supabase.from('non_conformities') as any).insert({
-      source_type: form.source_type,
-      severity: form.severity,
-      title: form.title.trim(),
-      description: form.description.trim(),
-      immediate_action: form.immediate_action.trim(),
-      detected_by: currentStaff?.id ?? null,
-    })
+    const { data, error } = await (supabase.from('non_conformities') as any)
+      .insert({
+        source_type: form.source_type,
+        severity: form.severity,
+        title: form.title.trim(),
+        description: form.description.trim(),
+        immediate_action: form.immediate_action.trim(),
+        detected_by: currentStaff?.id ?? null,
+      })
+      .select()
+      .single()
 
     if (error) {
       addToast({ type: 'error', message: `Errore: ${error.message}` })
       setSaving(false)
       return
+    }
+
+    if (data) {
+      await writeAuditLog(supabase, {
+        tableName: 'non_conformities',
+        recordId: data.id,
+        action: 'insert',
+        staff: currentStaff,
+        afterData: data,
+      })
     }
 
     addToast({ type: 'success', message: 'Non conformità aperta.' })
@@ -116,6 +131,14 @@ export default function NonConformitaPage() {
       .eq('id', item.id)
 
     if (!error) {
+      await writeAuditLog(supabase, {
+        tableName: 'non_conformities',
+        recordId: item.id,
+        action: 'update',
+        staff: currentStaff,
+        beforeData: item,
+        afterData: { status: 'in_progress' },
+      })
       setItems(prev => prev.map(row => row.id === item.id ? { ...row, status: 'in_progress' } : row))
       addToast({ type: 'info', message: 'Non conformità presa in carico.' })
     }
@@ -168,8 +191,61 @@ export default function NonConformitaPage() {
     }
 
     addToast({ type: 'success', message: 'Non conformità aggiornata.' })
+    await writeAuditLog(supabase, {
+      tableName: 'non_conformities',
+      recordId: editingItem.id,
+      action: 'update',
+      staff: currentStaff,
+      beforeData: editingItem,
+      afterData: {
+        source_type: editForm.source_type,
+        severity: editForm.severity,
+        status: editForm.status,
+        title: editForm.title.trim(),
+        description: editForm.description.trim(),
+        immediate_action: editForm.immediate_action.trim() || null,
+        corrective_action: editForm.corrective_action.trim() || null,
+        preventive_action: editForm.preventive_action.trim() || null,
+        manager_notes: editForm.manager_notes.trim() || null,
+      },
+    })
     setEditingItem(null)
     await load()
+    setSaving(false)
+  }
+
+  const handleDeleteItem = async (item: NonConformity) => {
+    if (!canDeleteRecords) {
+      addToast({ type: 'error', message: 'Eliminazione consentita solo a manager o amministratore.' })
+      return
+    }
+
+    const confirmed = window.confirm(`Eliminare la non conformita "${item.title}" del ${formatDateTime(item.detected_at)}? Usa questa funzione solo per errori umani di inserimento.`)
+    if (!confirmed) return
+
+    setSaving(true)
+    await writeAuditLog(supabase, {
+      tableName: 'non_conformities',
+      recordId: item.id,
+      action: 'delete',
+      staff: currentStaff,
+      beforeData: item,
+      afterData: { reason: 'Eliminazione per errore umano confermata dall operatore' },
+    })
+
+    const { error } = await (supabase.from('non_conformities') as any)
+      .delete()
+      .eq('id', item.id)
+
+    if (error) {
+      addToast({ type: 'error', message: `Eliminazione non riuscita: ${error.message}` })
+      setSaving(false)
+      return
+    }
+
+    addToast({ type: 'success', message: 'Non conformita eliminata.' })
+    setItems(prev => prev.filter(row => row.id !== item.id))
+    if (editingItem?.id === item.id) setEditingItem(null)
     setSaving(false)
   }
 
@@ -286,14 +362,21 @@ export default function NonConformitaPage() {
 
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 'var(--space-3)' }}>
                 <span className={`badge ${STATUS_BADGE_CLASS[item.status]}`}>{STATUS_LABELS[item.status]}</span>
-                {item.status === 'open' && (
-                  <button className="btn btn--secondary btn--sm" onClick={() => markInProgress(item)}>
-                    Prendi in carico
+                <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                  {item.status === 'open' && (
+                    <button className="btn btn--secondary btn--sm" onClick={() => markInProgress(item)}>
+                      Prendi in carico
+                    </button>
+                  )}
+                  <button className="btn btn--secondary btn--sm" onClick={() => openEditItem(item)}>
+                    Modifica
                   </button>
-                )}
-                <button className="btn btn--secondary btn--sm" onClick={() => openEditItem(item)}>
-                  Modifica
-                </button>
+                  {canDeleteRecords && (
+                    <button className="btn btn--danger btn--sm" onClick={() => handleDeleteItem(item)} disabled={saving}>
+                      Elimina
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           ))}
@@ -361,11 +444,18 @@ export default function NonConformitaPage() {
               <textarea className="input" rows={2} value={editForm.preventive_action} onChange={event => setEditForm(prev => ({ ...prev, preventive_action: event.target.value }))} />
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-3)', marginTop: 'var(--space-6)' }}>
-              <button className="btn btn--secondary" onClick={() => setEditingItem(null)}>Annulla</button>
-              <button className="btn btn--primary" onClick={handleUpdateItem} disabled={saving}>
-                {saving ? 'Salvataggio...' : 'Salva modifiche'}
-              </button>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 'var(--space-3)', marginTop: 'var(--space-6)', flexWrap: 'wrap' }}>
+              {canDeleteRecords ? (
+                <button className="btn btn--danger" onClick={() => handleDeleteItem(editingItem)} disabled={saving}>
+                  Elimina
+                </button>
+              ) : <span />}
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-3)' }}>
+                <button className="btn btn--secondary" onClick={() => setEditingItem(null)}>Annulla</button>
+                <button className="btn btn--primary" onClick={handleUpdateItem} disabled={saving}>
+                  {saving ? 'Salvataggio...' : 'Salva modifiche'}
+                </button>
+              </div>
             </div>
           </div>
         </div>

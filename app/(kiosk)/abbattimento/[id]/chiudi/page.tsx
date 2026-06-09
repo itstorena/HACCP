@@ -8,6 +8,7 @@ import { createClient } from '@/lib/supabase/client'
 import { useToastStore } from '@/store/toastStore'
 import { useStaffStore } from '@/store/staffStore'
 import { checkBlastComplianceAgainstTarget, BLAST_CYCLE_TARGETS } from '@/lib/utils/compliance'
+import { writeAuditLog } from '@/lib/utils/auditLog'
 import { formatDateTime, formatTemp } from '@/lib/utils/formatting'
 import Link from 'next/link'
 import type { Database } from '@/types/database'
@@ -79,6 +80,22 @@ export default function ChiudiCicloPage() {
       setLoading(false)
       return
     }
+
+    await writeAuditLog(supabase, {
+      tableName: 'blast_chiller_logs',
+      recordId: id,
+      action: 'update',
+      staff: currentStaff,
+      beforeData: cycle,
+      afterData: {
+        end_time: endTime,
+        end_temp: data.end_temp,
+        is_compliant: compliant,
+        corrective_action: !compliant ? (data.corrective_action ?? null) : null,
+        verified_by: currentStaff?.id ?? null,
+        notes: data.notes ?? null,
+      },
+    })
 
     if (!compliant) {
       await supabase.from('non_conformities').insert({

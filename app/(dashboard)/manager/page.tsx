@@ -1,5 +1,6 @@
 'use client'
 import { useEffect, useState } from 'react'
+import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 
 interface Stats {
@@ -74,39 +75,39 @@ export default function ManagerPage() {
       ) : (
         <>
           <div className="kpi-grid" style={{ marginBottom: 'var(--space-8)' }}>
-            <div className="kpi-card kpi-card--primary">
+            <Link href="/abbattimento" className="kpi-card kpi-card--primary">
               <div className="kpi-label">Cicli Abbattitore Oggi</div>
               <div className="kpi-value">{stats.blastToday}</div>
-            </div>
-            <div className={`kpi-card kpi-card--${stats.nonCompliantMonth > 0 ? 'danger' : 'success'}`}>
+            </Link>
+            <Link href="/manager/non-conformita" className={`kpi-card kpi-card--${stats.nonCompliantMonth > 0 ? 'danger' : 'success'}`}>
               <div className="kpi-label">Non Conformità (mese)</div>
               <div className="kpi-value">{stats.nonCompliantMonth}</div>
-            </div>
-            <div className={`kpi-card kpi-card--${stats.openNonConformities > 0 ? 'danger' : 'success'}`}>
+            </Link>
+            <Link href="/manager/non-conformita" className={`kpi-card kpi-card--${stats.openNonConformities > 0 ? 'danger' : 'success'}`}>
               <div className="kpi-label">NC Aperte</div>
               <div className="kpi-value">{stats.openNonConformities}</div>
-            </div>
-            <div className={`kpi-card kpi-card--${stats.expiringBatches > 0 ? 'danger' : 'success'}`}>
+            </Link>
+            <Link href="/lotti" className={`kpi-card kpi-card--${stats.expiringBatches > 0 ? 'danger' : 'success'}`}>
               <div className="kpi-label">Lotti in Scadenza 48h</div>
               <div className="kpi-value">{stats.expiringBatches}</div>
-            </div>
-            <div className={`kpi-card kpi-card--${stats.tempOutOfRangeToday > 0 ? 'danger' : 'success'}`}>
+            </Link>
+            <Link href="/temperature" className={`kpi-card kpi-card--${stats.tempOutOfRangeToday > 0 ? 'danger' : 'success'}`}>
               <div className="kpi-label">Temperature KO Oggi</div>
               <div className="kpi-value">{stats.tempOutOfRangeToday}</div>
-            </div>
-            <div className={`kpi-card kpi-card--${stats.failedChecksToday > 0 ? 'danger' : 'success'}`}>
+            </Link>
+            <Link href="/controlli" className={`kpi-card kpi-card--${stats.failedChecksToday > 0 ? 'danger' : 'success'}`}>
               <div className="kpi-label">Controlli Oggi</div>
               <div className="kpi-value">{stats.checksToday}</div>
               <div className="kpi-sub">{stats.failedChecksToday} non conformi</div>
-            </div>
-            <div className="kpi-card kpi-card--info">
+            </Link>
+            <Link href="/manager/staff" className="kpi-card kpi-card--info">
               <div className="kpi-label">Staff Attivo</div>
               <div className="kpi-value">{stats.staffCount}</div>
-            </div>
-            <div className="kpi-card kpi-card--primary">
+            </Link>
+            <Link href="/fornitori" className="kpi-card kpi-card--primary">
               <div className="kpi-label">Fornitori Oggi</div>
               <div className="kpi-value">{stats.supplierToday}</div>
-            </div>
+            </Link>
           </div>
 
           {recentNonConformities.length > 0 && (

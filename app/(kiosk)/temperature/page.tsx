@@ -11,6 +11,7 @@ import {
   inferTemperatureSeverity,
   isTemperatureCompliant,
 } from '@/lib/utils/haccp'
+import { writeAuditLog } from '@/lib/utils/auditLog'
 export interface Equipment {
   id: string
   name: string
@@ -60,6 +61,7 @@ export default function TemperaturePage() {
   })
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const canDeleteRecords = currentStaff?.role === 'manager'
 
   const selectedEquipment = useMemo(
     () => equipment.find(item => item.id === selectedEquipmentId) ?? null,
@@ -138,6 +140,16 @@ export default function TemperaturePage() {
       return
     }
 
+    if (data) {
+      await writeAuditLog(supabase, {
+        tableName: 'temperature_logs',
+        recordId: data.id,
+        action: 'insert',
+        staff: currentStaff,
+        afterData: data,
+      })
+    }
+
     if (!compliant && data) {
       await (supabase.from('non_conformities') as any).insert({
         source_type: 'temperature',
@@ -200,7 +212,7 @@ export default function TemperaturePage() {
     }
 
     setSaving(true)
-    const { error } = await (supabase.from('temperature_logs') as any)
+    const { data: updatedLog, error } = await (supabase.from('temperature_logs') as any)
       .update({
         equipment_name: editForm.equipment_name.trim(),
         temperature: value,
@@ -211,9 +223,11 @@ export default function TemperaturePage() {
         notes: editForm.notes.trim() || null,
       })
       .eq('id', editingLog.id)
+      .select('id')
+      .single()
 
-    if (error) {
-      addToast({ type: 'error', message: `Errore: ${error.message}` })
+    if (error || !updatedLog) {
+      addToast({ type: 'error', message: `Modifica non salvata: ${error?.message ?? 'nessuna riga aggiornata'}` })
       setSaving(false)
       return
     }
@@ -225,24 +239,98 @@ export default function TemperaturePage() {
         .eq('related_id', editingLog.id)
         .limit(1)
 
-      if (!existing || existing.length === 0) {
+      const nonConformityPayload = {
+        source_type: 'temperature',
+        severity: inferTemperatureSeverity(value, min, max),
+        title: `Temperatura fuori soglia - ${editForm.equipment_name.trim()}`,
+        description: `${editForm.equipment_name.trim()}: rilevati ${value} C, soglia ${formatRange(min, max)}.`,
+        detected_by: currentStaff?.id ?? null,
+        related_table: 'temperature_logs',
+        related_id: editingLog.id,
+        immediate_action: editForm.corrective_action.trim(),
+        corrective_action: editForm.corrective_action.trim(),
+      }
+
+      if (existing?.[0]?.id) {
+        await (supabase.from('non_conformities') as any)
+          .update(nonConformityPayload)
+          .eq('id', existing[0].id)
+      } else {
         await (supabase.from('non_conformities') as any).insert({
-          source_type: 'temperature',
-          severity: inferTemperatureSeverity(value, min, max),
-          title: `Temperatura fuori soglia - ${editForm.equipment_name.trim()}`,
-          description: `${editForm.equipment_name.trim()}: rilevati ${value} C, soglia ${formatRange(min, max)}.`,
-          detected_by: currentStaff?.id ?? null,
-          related_table: 'temperature_logs',
-          related_id: editingLog.id,
-          immediate_action: editForm.corrective_action.trim(),
-          corrective_action: editForm.corrective_action.trim(),
+          ...nonConformityPayload,
         })
       }
+    } else {
+      await (supabase.from('non_conformities') as any)
+        .update({
+          status: 'void',
+          manager_notes: 'Non conformita annullata dopo correzione della registrazione temperatura.',
+        })
+        .eq('related_table', 'temperature_logs')
+        .eq('related_id', editingLog.id)
+        .neq('status', 'closed')
     }
+
+    await writeAuditLog(supabase, {
+      tableName: 'temperature_logs',
+      recordId: editingLog.id,
+      action: 'update',
+      staff: currentStaff,
+      beforeData: editingLog,
+      afterData: {
+        equipment_name: editForm.equipment_name.trim(),
+        temperature: value,
+        min_threshold: min,
+        max_threshold: max,
+        is_compliant: compliant,
+        corrective_action: compliant ? null : editForm.corrective_action.trim(),
+        notes: editForm.notes.trim() || null,
+      },
+    })
 
     addToast({ type: 'success', message: 'Registrazione temperatura aggiornata.' })
     setEditingLog(null)
     await load()
+    setSaving(false)
+  }
+
+  const handleDeleteLog = async (log: TemperatureLog) => {
+    if (!canDeleteRecords) {
+      addToast({ type: 'error', message: 'Eliminazione consentita solo a manager o amministratore.' })
+      return
+    }
+
+    const confirmed = window.confirm(`Eliminare la registrazione temperatura di ${log.equipment_name} del ${formatDateTime(log.recorded_at)}? Usa questa funzione solo per errori umani di inserimento.`)
+    if (!confirmed) return
+
+    setSaving(true)
+    await writeAuditLog(supabase, {
+      tableName: 'temperature_logs',
+      recordId: log.id,
+      action: 'delete',
+      staff: currentStaff,
+      beforeData: log,
+      afterData: { reason: 'Eliminazione per errore umano confermata dall operatore' },
+    })
+
+    await (supabase.from('non_conformities') as any)
+      .delete()
+      .eq('related_table', 'temperature_logs')
+      .eq('related_id', log.id)
+
+    const { error } = await (supabase.from('temperature_logs') as any)
+      .delete()
+      .eq('id', log.id)
+
+    if (error) {
+      addToast({ type: 'error', message: `Eliminazione non riuscita: ${error.message}` })
+      setSaving(false)
+      return
+    }
+
+    addToast({ type: 'success', message: 'Registrazione temperatura eliminata.' })
+    setLogs(prev => prev.filter(item => item.id !== log.id))
+    if (editingLog?.id === log.id) setEditingLog(null)
     setSaving(false)
   }
 
@@ -377,9 +465,16 @@ export default function TemperaturePage() {
                   </td>
                   <td style={{ color: 'var(--color-text-muted)' }}>{log.corrective_action ?? '—'}</td>
                   <td className="no-print">
-                    <button className="btn btn--secondary btn--sm" onClick={() => openEditLog(log)}>
-                      Modifica
-                    </button>
+                    <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
+                      <button className="btn btn--secondary btn--sm" onClick={() => openEditLog(log)}>
+                        Modifica
+                      </button>
+                      {canDeleteRecords && (
+                        <button className="btn btn--danger btn--sm" onClick={() => handleDeleteLog(log)} disabled={saving}>
+                          Elimina
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -426,11 +521,18 @@ export default function TemperaturePage() {
               <textarea className="input" rows={2} value={editForm.notes} onChange={event => setEditForm(prev => ({ ...prev, notes: event.target.value }))} />
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-3)', marginTop: 'var(--space-6)' }}>
-              <button className="btn btn--secondary" onClick={() => setEditingLog(null)}>Annulla</button>
-              <button className="btn btn--primary" onClick={handleUpdateLog} disabled={saving}>
-                {saving ? 'Salvataggio...' : 'Salva modifiche'}
-              </button>
+            <div style={{ display: 'flex', justifyContent: 'space-between', gap: 'var(--space-3)', marginTop: 'var(--space-6)', flexWrap: 'wrap' }}>
+              {canDeleteRecords ? (
+                <button className="btn btn--danger" onClick={() => handleDeleteLog(editingLog)} disabled={saving}>
+                  Elimina
+                </button>
+              ) : <span />}
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-3)' }}>
+                <button className="btn btn--secondary" onClick={() => setEditingLog(null)}>Annulla</button>
+                <button className="btn btn--primary" onClick={handleUpdateLog} disabled={saving}>
+                  {saving ? 'Salvataggio...' : 'Salva modifiche'}
+                </button>
+              </div>
             </div>
           </div>
         </div>
