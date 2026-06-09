@@ -124,9 +124,9 @@ ALTER PUBLICATION supabase_realtime ADD TABLE temperature_logs;
 -- pin_hash = bcrypt('1234', 10)
 -- ------------------------------------------------------------
 INSERT INTO staff_members (first_name, last_name, role, pin_hash, avatar_url) VALUES
-  ('Marco', 'Rossi', 'chef', '$2b$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LkdREezYgu6', NULL),
-  ('Giulia', 'Bianchi', 'cook', '$2b$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LkdREezYgu6', NULL),
-  ('Luca', 'Ferrari', 'cook', '$2b$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LkdREezYgu6', NULL),
-  ('Sara', 'Conti', 'cleaner', '$2b$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LkdREezYgu6', NULL),
-  ('Admin', 'Manager', 'manager', '$2b$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LkdREezYgu6', NULL)
+  ('Marco', 'Rossi', 'chef', '$2b$10$w5mviDQta2L21YUbRyhrf.jH.DN2HCeNAxILkEJ5XLcWlqFWsXhCS', NULL),
+  ('Giulia', 'Bianchi', 'cook', '$2b$10$w5mviDQta2L21YUbRyhrf.jH.DN2HCeNAxILkEJ5XLcWlqFWsXhCS', NULL),
+  ('Luca', 'Ferrari', 'cook', '$2b$10$w5mviDQta2L21YUbRyhrf.jH.DN2HCeNAxILkEJ5XLcWlqFWsXhCS', NULL),
+  ('Sara', 'Conti', 'cleaner', '$2b$10$w5mviDQta2L21YUbRyhrf.jH.DN2HCeNAxILkEJ5XLcWlqFWsXhCS', NULL),
+  ('Admin', 'Manager', 'manager', '$2b$10$w5mviDQta2L21YUbRyhrf.jH.DN2HCeNAxILkEJ5XLcWlqFWsXhCS', NULL)
 ON CONFLICT DO NOTHING;

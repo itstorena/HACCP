@@ -7,8 +7,10 @@ import { createClient } from '@/lib/supabase/client'
 
 const navItems = [
   { href: '/manager', label: 'Dashboard', icon: '📊', exact: true },
-  { href: '/manager/staff', label: 'Staff', icon: '👤' },
+  { href: '/manager/piano-haccp', label: 'Piano HACCP', icon: '📋' },
+  { href: '/manager/non-conformita', label: 'Non Conformità', icon: '⚠️' },
   { href: '/manager/report', label: 'Report HACCP', icon: '📄' },
+  { href: '/manager/staff', label: 'Staff', icon: '👤' },
 ]
 
 export default function ManagerLayout({ children }: { children: React.ReactNode }) {

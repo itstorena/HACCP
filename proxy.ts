@@ -1,7 +1,7 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   let response = NextResponse.next({
     request: {
       headers: request.headers,
@@ -23,36 +23,28 @@ export async function middleware(request: NextRequest) {
               headers: request.headers,
             },
           })
-          cookiesToSet.forEach(({ name, value, options }) =>
+          cookiesToSet.forEach(({ name, value, options }) => {
             response.cookies.set(name, value, options)
-          )
+          })
         },
       },
     }
   )
 
-  // Refresh session and get user
   const {
     data: { user },
   } = await supabase.auth.getUser()
 
   const path = request.nextUrl.pathname
-
-  // Check if it's a manager route
   const isManagerRoute = path.startsWith('/manager')
   const isLoginRoute = path === '/manager/login'
 
-  if (isManagerRoute && !isLoginRoute) {
-    if (!user) {
-      const loginUrl = new URL('/manager/login', request.url)
-      return NextResponse.redirect(loginUrl)
-    }
+  if (isManagerRoute && !isLoginRoute && !user) {
+    return NextResponse.redirect(new URL('/manager/login', request.url))
   }
 
-  // Redirect to manager if already logged in and visiting login page
   if (isLoginRoute && user) {
-    const managerUrl = new URL('/manager', request.url)
-    return NextResponse.redirect(managerUrl)
+    return NextResponse.redirect(new URL('/manager', request.url))
   }
 
   return response
@@ -60,13 +52,6 @@ export async function middleware(request: NextRequest) {
 
 export const config = {
   matcher: [
-    /*
-     * Match all request paths except for the ones starting with:
-     * - _next/static (static files)
-     * - _next/image (image optimization files)
-     * - favicon.ico (favicon file)
-     * Feel free to modify this pattern to include more paths.
-     */
     '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 }

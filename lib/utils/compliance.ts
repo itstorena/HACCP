@@ -34,6 +34,23 @@ export function checkBlastCompliance(
   }
 }
 
+export function checkBlastComplianceAgainstTarget(
+  startTime: string,
+  endTime: string,
+  endTemp: number,
+  targetTemp: number,
+  targetMinutes: number
+): boolean {
+  const durationMs = new Date(endTime).getTime() - new Date(startTime).getTime()
+  const durationMinutes = durationMs / (1000 * 60)
+  return endTemp <= targetTemp && durationMinutes <= targetMinutes
+}
+
+export function getCycleDurationMinutes(startTime: string, endTime: string): number {
+  const durationMs = new Date(endTime).getTime() - new Date(startTime).getTime()
+  return Math.max(0, Math.round(durationMs / (1000 * 60)))
+}
+
 /**
  * Calcola i minuti rimasti in un ciclo attivo
  */

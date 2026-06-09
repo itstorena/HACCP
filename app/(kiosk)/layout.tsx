@@ -12,6 +12,8 @@ const navItems = [
   { href: '/fornitori', label: 'Fornitori', icon: '📦' },
   { href: '/lotti', label: 'Lotti', icon: '🏷️' },
   { href: '/abbattimento', label: 'Abbattitore', icon: '🧊' },
+  { href: '/temperature', label: 'Temperature', icon: '🌡️' },
+  { href: '/non-conformita', label: 'NC', icon: '⚠️' },
 ]
 
 export default function KioskLayout({ children }: { children: React.ReactNode }) {
