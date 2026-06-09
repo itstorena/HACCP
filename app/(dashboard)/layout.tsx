@@ -1,8 +1,9 @@
 'use client'
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import ToastContainer from '@/components/ui/Toast'
 import { useToastStore } from '@/store/toastStore'
+import { createClient } from '@/lib/supabase/client'
 
 const navItems = [
   { href: '/manager', label: 'Dashboard', icon: '📊', exact: true },
@@ -12,7 +13,33 @@ const navItems = [
 
 export default function ManagerLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
+  const router = useRouter()
+  const supabase = createClient()
   const { toasts } = useToastStore()
+
+  const isLogin = pathname === '/manager/login'
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut()
+    router.push('/manager/login')
+    router.refresh()
+  }
+
+  if (isLogin) {
+    return (
+      <div style={{
+        minHeight: '100svh',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: 'var(--color-bg)',
+        color: 'var(--color-text)',
+      }}>
+        {children}
+        <ToastContainer toasts={toasts} />
+      </div>
+    )
+  }
 
   return (
     <div className="dashboard-layout">
@@ -34,11 +61,31 @@ export default function ManagerLayout({ children }: { children: React.ReactNode 
               </Link>
             )
           })}
-          <div style={{ marginTop: 'auto', paddingTop: 'var(--space-4)', borderTop: '1px solid var(--color-border)' }}>
-            <Link href="/login" className="sidebar__link">
+          
+          <div style={{ marginTop: 'auto', display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+            <button
+              onClick={handleLogout}
+              className="sidebar__link"
+              style={{
+                background: 'transparent',
+                border: 'none',
+                width: '100%',
+                textAlign: 'left',
+                cursor: 'pointer',
+                fontFamily: 'inherit',
+                fontSize: 'inherit',
+                color: 'var(--color-danger)',
+              }}
+            >
               <span>🚪</span>
-              Torna al Kiosk
-            </Link>
+              Logout
+            </button>
+            <div style={{ borderTop: '1px solid var(--color-border)', paddingTop: 'var(--space-2)' }}>
+              <Link href="/login" className="sidebar__link">
+                <span>🖥️</span>
+                Torna al Kiosk
+              </Link>
+            </div>
           </div>
         </nav>
       </aside>

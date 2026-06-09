@@ -1120,3 +1120,68 @@ tbody tr:hover {
   .staff-grid { grid-template-columns: repeat(2, 1fr); }
   .kpi-grid { grid-template-columns: 1fr; }
 }
+
+/* ============================================================
+   PRINT STYLES (HACCP Official Print PDF)
+   ============================================================ */
+@media print {
+  body {
+    background: #ffffff !important;
+    color: #000000 !important;
+    font-size: 11pt !important;
+  }
+  
+  .sidebar,
+  .btn,
+  .kiosk-header,
+  .kiosk-nav,
+  .card form,
+  .form-group,
+  .page-header button,
+  input,
+  select,
+  textarea {
+    display: none !important;
+  }
+  
+  .dashboard-layout {
+    display: block !important;
+  }
+  
+  .dashboard-main {
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+  }
+  
+  .card, .table-container {
+    background: transparent !important;
+    border: 1px solid #ccc !important;
+    box-shadow: none !important;
+    color: #000000 !important;
+    page-break-inside: avoid;
+  }
+
+  table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+    color: #000000 !important;
+  }
+
+  th {
+    background: #f0f0f0 !important;
+    color: #000000 !important;
+    border-bottom: 2px solid #000000 !important;
+  }
+
+  td {
+    border-top: 1px solid #ccc !important;
+    color: #000000 !important;
+  }
+
+  .badge {
+    background: transparent !important;
+    border: 1px solid #000000 !important;
+    color: #000000 !important;
+  }
+}

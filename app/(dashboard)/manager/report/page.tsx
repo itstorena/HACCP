@@ -24,14 +24,12 @@ export default function ReportPage() {
     const end = new Date(year, mon, 0, 23, 59, 59).toISOString()
 
     const [blastRes, supplierRes] = await Promise.all([
-      supabase
-        .from('blast_chiller_logs')
-        .select('id, cycle_type, start_time, end_time, start_temp, end_temp, target_time_minutes, is_compliant, corrective_action, operator_id, notes, created_at, internal_batch_id')
+      (supabase.from('blast_chiller_logs') as any)
+        .select('id, cycle_type, start_time, end_time, start_temp, end_temp, target_time_minutes, is_compliant, corrective_action, operator_id, notes, created_at, internal_batch_id, staff_members(first_name, last_name), internal_batches(name)')
         .gte('created_at', start)
         .lte('created_at', end)
         .order('start_time'),
-      supabase
-        .from('supplier_batches')
+      (supabase.from('supplier_batches') as any)
         .select('id, product_name, supplier_name, original_lot_code, delivery_date, expiry_date, risk_level, is_compliant, notes, created_at, registered_by')
         .gte('created_at', start)
         .lte('created_at', end)
