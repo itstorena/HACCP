@@ -9,6 +9,7 @@ export type OperationalCheckType = 'cleaning' | 'oil_quality' | 'pest_control' |
 export type NonConformitySource = 'receiving' | 'blast_chiller' | 'temperature' | 'cleaning' | 'lot' | 'allergen' | 'pest' | 'maintenance' | 'other'
 export type NonConformitySeverity = 'low' | 'medium' | 'high' | 'critical'
 export type NonConformityStatus = 'open' | 'in_progress' | 'closed' | 'void'
+export type SupplierDocumentType = 'invoice' | 'ddt' | 'receipt' | 'other'
 
 export interface Database {
   public: {
@@ -52,9 +53,13 @@ export interface Database {
           product_name: string
           supplier_name: string
           original_lot_code: string | null
+          supplier_document_id: string | null
           document_number: string | null
           delivery_date: string
           expiry_date: string
+          quantity: number | null
+          unit: string | null
+          ocr_source_text: string | null
           received_temp: number | null
           packaging_ok: boolean
           label_ok: boolean
@@ -72,9 +77,13 @@ export interface Database {
           product_name: string
           supplier_name: string
           original_lot_code?: string | null
+          supplier_document_id?: string | null
           document_number?: string | null
           delivery_date?: string
           expiry_date: string
+          quantity?: number | null
+          unit?: string | null
+          ocr_source_text?: string | null
           received_temp?: number | null
           packaging_ok?: boolean
           label_ok?: boolean
@@ -92,9 +101,13 @@ export interface Database {
           product_name?: string
           supplier_name?: string
           original_lot_code?: string | null
+          supplier_document_id?: string | null
           document_number?: string | null
           delivery_date?: string
           expiry_date?: string
+          quantity?: number | null
+          unit?: string | null
+          ocr_source_text?: string | null
           received_temp?: number | null
           packaging_ok?: boolean
           label_ok?: boolean
@@ -104,6 +117,84 @@ export interface Database {
           risk_level?: RiskLevel
           is_compliant?: boolean
           registered_by?: string | null
+          notes?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
+      supplier_documents: {
+        Row: {
+          id: string
+          document_type: SupplierDocumentType
+          supplier_name: string | null
+          document_number: string | null
+          document_date: string | null
+          image_url: string | null
+          ocr_text: string | null
+          ocr_confidence: number | null
+          parsed_by: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          document_type?: SupplierDocumentType
+          supplier_name?: string | null
+          document_number?: string | null
+          document_date?: string | null
+          image_url?: string | null
+          ocr_text?: string | null
+          ocr_confidence?: number | null
+          parsed_by?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          document_type?: SupplierDocumentType
+          supplier_name?: string | null
+          document_number?: string | null
+          document_date?: string | null
+          image_url?: string | null
+          ocr_text?: string | null
+          ocr_confidence?: number | null
+          parsed_by?: string | null
+          created_at?: string
+        }
+        Relationships: []
+      }
+      supplier_document_items: {
+        Row: {
+          id: string
+          supplier_document_id: string | null
+          supplier_batch_id: string | null
+          product_name: string
+          original_lot_code: string | null
+          expiry_date: string | null
+          quantity: number | null
+          unit: string | null
+          notes: string | null
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          supplier_document_id?: string | null
+          supplier_batch_id?: string | null
+          product_name: string
+          original_lot_code?: string | null
+          expiry_date?: string | null
+          quantity?: number | null
+          unit?: string | null
+          notes?: string | null
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          supplier_document_id?: string | null
+          supplier_batch_id?: string | null
+          product_name?: string
+          original_lot_code?: string | null
+          expiry_date?: string | null
+          quantity?: number | null
+          unit?: string | null
           notes?: string | null
           created_at?: string
         }

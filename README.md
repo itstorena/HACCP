@@ -36,13 +36,15 @@ Esegui in Supabase SQL Editor, in ordine:
 
 1. `supabase/migrations/001_initial_schema.sql`
 2. `supabase/migrations/002_haccp_operating_system.sql`
+3. `supabase/migrations/003_supplier_document_ocr.sql`
 
 Vedi `MIGRATION.md`.
 
 ## Aree principali
 
 - `/login` e `/dashboard`: kiosk staff con PIN.
-- `/fornitori`: ricevimento merci, DDT, temperatura, accettazione/rifiuto.
+- `/fornitori`: ricevimento merci, DDT, temperatura, accettazione/rifiuto, stampa e modifica.
+- `/fornitori/ocr`: acquisizione OCR fattura/DDT con creazione lotti fornitore da righe documento.
 - `/lotti`: preparazioni interne, QR, allergeni e collegamento materie prime.
 - `/abbattimento`: cicli abbattitore con profili HACCP configurabili.
 - `/temperature`: registro frigo/freezer/attrezzature e NC automatiche.
@@ -50,6 +52,7 @@ Vedi `MIGRATION.md`.
 - `/non-conformita`: segnalazione operativa problemi.
 - `/manager`: dashboard manager protetta da Supabase Auth.
 - `/manager/piano-haccp`: piano HACCP, CCP/PRP, profili e attrezzature.
+- `/manager/attrezzature`: frigo, freezer, abbattitori, sonde, soglie e frequenze.
 - `/manager/non-conformita`: gestione e chiusura NC.
 - `/manager/report`: report mensile stampabile.
 

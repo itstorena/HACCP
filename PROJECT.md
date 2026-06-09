@@ -8,9 +8,11 @@
 
 App Next.js 16 (App Router) per la digitalizzazione dei registri HACCP in un ristorante. Gestisce:
 - 📦 **Tracciabilità fornitori** (lotti in ingresso)
+- 📄 **OCR fatture/DDT fornitore** con creazione lotti da righe documento
 - 🏷️ **Lotti interni** con etichette QR code stampabili
 - 🧊 **Abbattitore termico** con timer realtime e verifica conformità
 - 🌡️ **Registro temperature** frigo/freezer/attrezzature con non conformità automatiche
+- 🛠️ **Gestione attrezzature** con soglie e frequenze controllo
 - 🧽 **Controlli operativi** pulizie, allergeni, infestanti, olio, manutenzione, formazione
 - ⚠️ **Non conformità** con azioni correttive e chiusura manager
 - 📋 **Piano HACCP** con CCP/PRP e profili abbattitore configurabili
@@ -103,6 +105,8 @@ haccp-app/
 |---------|-------------|----------|
 | `staff_members` | Personale con PIN hash | ✅ |
 | `supplier_batches` | Lotti fornitori in ingresso | ✅ |
+| `supplier_documents` | Fatture/DDT acquisiti via OCR | ✅ |
+| `supplier_document_items` | Righe documento collegate ai lotti | ✅ |
 | `internal_batches` | Preparazioni interne con QR token | ✅ |
 | `blast_chiller_logs` | Cicli abbattitore termico | ✅ |
 | `temperature_logs` | Registrazioni temperature equipment | ✅ |
@@ -235,6 +239,9 @@ Il modulo `lib/utils/compliance.ts` implementa:
 - [x] Registro temperature con non conformità automatiche
 - [x] Registro controlli operativi
 - [x] Gestione non conformità
+- [x] Stampa e modifica registri operativi
+- [x] OCR fattura/DDT fornitore con creazione lotti
+- [x] Gestione attrezzature e soglie temperatura
 - [ ] Edge Function `close-blast-cycle` per chiusura automatica
 - [ ] Notifiche push per scadenze e non conformità
 - [ ] Esportazione PDF report (jsPDF o React-PDF)

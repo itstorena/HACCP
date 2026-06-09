@@ -14,12 +14,13 @@ import {
 } from '@/lib/utils/haccp'
 export type NonConformitySource = 'receiving' | 'blast_chiller' | 'temperature' | 'cleaning' | 'lot' | 'allergen' | 'pest' | 'maintenance' | 'other'
 export type NonConformitySeverity = 'low' | 'medium' | 'high' | 'critical'
+export type NonConformityStatus = 'open' | 'in_progress' | 'closed' | 'void'
 
 export interface NonConformity {
   id: string
   source_type: NonConformitySource
   severity: NonConformitySeverity
-  status: 'open' | 'in_progress' | 'closed' | 'void'
+  status: NonConformityStatus
   title: string
   description: string
   detected_at: string
@@ -40,12 +41,24 @@ export default function NonConformitaPage() {
   const [items, setItems] = useState<NonConformity[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [editingItem, setEditingItem] = useState<NonConformity | null>(null)
   const [form, setForm] = useState({
     source_type: 'other' as NonConformitySource,
     severity: 'medium' as NonConformitySeverity,
     title: '',
     description: '',
     immediate_action: '',
+  })
+  const [editForm, setEditForm] = useState({
+    source_type: 'other' as NonConformitySource,
+    severity: 'medium' as NonConformitySeverity,
+    status: 'open' as NonConformityStatus,
+    title: '',
+    description: '',
+    immediate_action: '',
+    corrective_action: '',
+    preventive_action: '',
+    manager_notes: '',
   })
 
   const load = async () => {
@@ -108,6 +121,58 @@ export default function NonConformitaPage() {
     }
   }
 
+  const openEditItem = (item: NonConformity) => {
+    setEditingItem(item)
+    setEditForm({
+      source_type: item.source_type,
+      severity: item.severity,
+      status: item.status,
+      title: item.title,
+      description: item.description,
+      immediate_action: item.immediate_action ?? '',
+      corrective_action: item.corrective_action ?? '',
+      preventive_action: item.preventive_action ?? '',
+      manager_notes: item.manager_notes ?? '',
+    })
+  }
+
+  const handleUpdateItem = async () => {
+    if (!editingItem) return
+    if (!editForm.title.trim() || !editForm.description.trim()) {
+      addToast({ type: 'error', message: 'Titolo e descrizione sono obbligatori.' })
+      return
+    }
+
+    setSaving(true)
+    const closingNow = editForm.status === 'closed' && editingItem.status !== 'closed'
+    const { error } = await (supabase.from('non_conformities') as any)
+      .update({
+        source_type: editForm.source_type,
+        severity: editForm.severity,
+        status: editForm.status,
+        title: editForm.title.trim(),
+        description: editForm.description.trim(),
+        immediate_action: editForm.immediate_action.trim() || null,
+        corrective_action: editForm.corrective_action.trim() || null,
+        preventive_action: editForm.preventive_action.trim() || null,
+        manager_notes: editForm.manager_notes.trim() || null,
+        closed_at: closingNow ? new Date().toISOString() : editingItem.closed_at,
+        closed_by: closingNow ? currentStaff?.id ?? null : editingItem.closed_by,
+      })
+      .eq('id', editingItem.id)
+
+    if (error) {
+      addToast({ type: 'error', message: `Errore: ${error.message}` })
+      setSaving(false)
+      return
+    }
+
+    addToast({ type: 'success', message: 'Non conformità aggiornata.' })
+    setEditingItem(null)
+    await load()
+    setSaving(false)
+  }
+
   return (
     <div>
       <div className="page-header">
@@ -115,7 +180,10 @@ export default function NonConformitaPage() {
           <h1 className="page-title">⚠️ Non Conformità</h1>
           <p className="page-subtitle">Segnala problemi e azioni immediate durante il servizio</p>
         </div>
-        <Link href="/temperature" className="btn btn--secondary">🌡️ Temperature</Link>
+        <div style={{ display: 'flex', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
+          <button className="btn btn--secondary" onClick={() => window.print()}>🖨️ Stampa registro</button>
+          <Link href="/temperature" className="btn btn--secondary">🌡️ Temperature</Link>
+        </div>
       </div>
 
       <div className="card" style={{ marginBottom: 'var(--space-6)' }}>
@@ -223,9 +291,83 @@ export default function NonConformitaPage() {
                     Prendi in carico
                   </button>
                 )}
+                <button className="btn btn--secondary btn--sm" onClick={() => openEditItem(item)}>
+                  Modifica
+                </button>
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {editingItem && (
+        <div className="modal-overlay" onClick={() => setEditingItem(null)}>
+          <div className="modal" onClick={event => event.stopPropagation()}>
+            <div className="modal__header">
+              <h2 className="modal__title">Modifica non conformità</h2>
+              <button className="modal__close" onClick={() => setEditingItem(null)}>×</button>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-4)' }}>
+              <div className="form-group">
+                <label className="form-label">Origine</label>
+                <select className="input" value={editForm.source_type} onChange={event => setEditForm(prev => ({ ...prev, source_type: event.target.value as NonConformitySource }))}>
+                  {Object.entries(NON_CONFORMITY_SOURCE_LABELS).map(([value, label]) => (
+                    <option key={value} value={value}>{label}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Gravità</label>
+                <select className="input" value={editForm.severity} onChange={event => setEditForm(prev => ({ ...prev, severity: event.target.value as NonConformitySeverity }))}>
+                  {Object.entries(SEVERITY_LABELS).map(([value, label]) => (
+                    <option key={value} value={value}>{label}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="form-group" style={{ marginTop: 'var(--space-4)' }}>
+              <label className="form-label">Stato</label>
+              <select className="input" value={editForm.status} onChange={event => setEditForm(prev => ({ ...prev, status: event.target.value as NonConformityStatus }))}>
+                {Object.entries(STATUS_LABELS).map(([value, label]) => (
+                  <option key={value} value={value}>{label}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="form-group" style={{ marginTop: 'var(--space-4)' }}>
+              <label className="form-label">Titolo</label>
+              <input className="input" value={editForm.title} onChange={event => setEditForm(prev => ({ ...prev, title: event.target.value }))} />
+            </div>
+
+            <div className="form-group" style={{ marginTop: 'var(--space-4)' }}>
+              <label className="form-label">Descrizione</label>
+              <textarea className="input" rows={3} value={editForm.description} onChange={event => setEditForm(prev => ({ ...prev, description: event.target.value }))} />
+            </div>
+
+            <div className="form-group" style={{ marginTop: 'var(--space-4)' }}>
+              <label className="form-label">Azione immediata</label>
+              <textarea className="input" rows={2} value={editForm.immediate_action} onChange={event => setEditForm(prev => ({ ...prev, immediate_action: event.target.value }))} />
+            </div>
+
+            <div className="form-group" style={{ marginTop: 'var(--space-4)' }}>
+              <label className="form-label">Azione correttiva</label>
+              <textarea className="input" rows={2} value={editForm.corrective_action} onChange={event => setEditForm(prev => ({ ...prev, corrective_action: event.target.value }))} />
+            </div>
+
+            <div className="form-group" style={{ marginTop: 'var(--space-4)' }}>
+              <label className="form-label">Azione preventiva</label>
+              <textarea className="input" rows={2} value={editForm.preventive_action} onChange={event => setEditForm(prev => ({ ...prev, preventive_action: event.target.value }))} />
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-3)', marginTop: 'var(--space-6)' }}>
+              <button className="btn btn--secondary" onClick={() => setEditingItem(null)}>Annulla</button>
+              <button className="btn btn--primary" onClick={handleUpdateItem} disabled={saving}>
+                {saving ? 'Salvataggio...' : 'Salva modifiche'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

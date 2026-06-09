@@ -987,12 +987,7 @@ tbody tr:hover {
 }
 
 @media print {
-  body * { visibility: hidden; }
-  .qr-label, .qr-label * { visibility: visible; }
   .qr-label {
-    position: fixed;
-    top: 20px;
-    left: 20px;
     border: 2px solid #000;
   }
 }
@@ -1135,6 +1130,8 @@ tbody tr:hover {
   .btn,
   .kiosk-header,
   .kiosk-nav,
+  .modal-overlay,
+  .no-print,
   .card form,
   .form-group,
   .page-header button,

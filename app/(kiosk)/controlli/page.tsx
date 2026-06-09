@@ -31,9 +31,19 @@ export default function ControlliPage() {
   const [checks, setChecks] = useState<OperationalCheck[]>([])
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [editingCheck, setEditingCheck] = useState<OperationalCheck | null>(null)
   const [form, setForm] = useState({
     check_type: 'cleaning' as OperationalCheckType,
     area: 'Cucina',
+    item: '',
+    expected_result: '',
+    actual_result: '',
+    is_compliant: true,
+    corrective_action: '',
+  })
+  const [editForm, setEditForm] = useState({
+    check_type: 'cleaning' as OperationalCheckType,
+    area: '',
     item: '',
     expected_result: '',
     actual_result: '',
@@ -129,6 +139,78 @@ export default function ControlliPage() {
     setSaving(false)
   }
 
+  const openEditCheck = (check: OperationalCheck) => {
+    setEditingCheck(check)
+    setEditForm({
+      check_type: check.check_type,
+      area: check.area,
+      item: check.item,
+      expected_result: check.expected_result ?? '',
+      actual_result: check.actual_result ?? '',
+      is_compliant: check.is_compliant,
+      corrective_action: check.corrective_action ?? '',
+    })
+  }
+
+  const handleUpdateCheck = async () => {
+    if (!editingCheck) return
+    if (!editForm.area.trim() || !editForm.item.trim()) {
+      addToast({ type: 'error', message: 'Area e voce controllo sono obbligatorie.' })
+      return
+    }
+    if (!editForm.is_compliant && !editForm.corrective_action.trim()) {
+      addToast({ type: 'error', message: 'Per un controllo non conforme serve una azione correttiva.' })
+      return
+    }
+
+    setSaving(true)
+    const { error } = await supabase
+      .from('operational_checks')
+      .update({
+        check_type: editForm.check_type,
+        area: editForm.area.trim(),
+        item: editForm.item.trim(),
+        expected_result: editForm.expected_result.trim() || null,
+        actual_result: editForm.actual_result.trim() || null,
+        is_compliant: editForm.is_compliant,
+        corrective_action: editForm.is_compliant ? null : editForm.corrective_action.trim(),
+      })
+      .eq('id', editingCheck.id)
+
+    if (error) {
+      addToast({ type: 'error', message: `Errore: ${error.message}` })
+      setSaving(false)
+      return
+    }
+
+    if (!editForm.is_compliant) {
+      const { data: existing } = await (supabase.from('non_conformities') as any)
+        .select('id')
+        .eq('related_table', 'operational_checks')
+        .eq('related_id', editingCheck.id)
+        .limit(1)
+
+      if (!existing || existing.length === 0) {
+        await supabase.from('non_conformities').insert({
+          source_type: editForm.check_type === 'pest_control' ? 'pest' : editForm.check_type === 'maintenance' ? 'maintenance' : editForm.check_type === 'allergen_control' ? 'allergen' : 'cleaning',
+          severity: editForm.check_type === 'pest_control' || editForm.check_type === 'allergen_control' ? 'high' : 'medium',
+          title: `Controllo non conforme - ${editForm.item}`,
+          description: `${editForm.area}: ${editForm.actual_result || 'esito non conforme'}. Atteso: ${editForm.expected_result || 'non specificato'}.`,
+          detected_by: currentStaff?.id ?? null,
+          related_table: 'operational_checks',
+          related_id: editingCheck.id,
+          immediate_action: editForm.corrective_action.trim(),
+          corrective_action: editForm.corrective_action.trim(),
+        })
+      }
+    }
+
+    addToast({ type: 'success', message: 'Controllo aggiornato.' })
+    setEditingCheck(null)
+    await load()
+    setSaving(false)
+  }
+
   return (
     <div>
       <div className="page-header">
@@ -136,7 +218,10 @@ export default function ControlliPage() {
           <h1 className="page-title">🧽 Controlli</h1>
           <p className="page-subtitle">Pulizie, infestanti, allergeni, olio, manutenzioni e formazione</p>
         </div>
-        <Link href="/non-conformita" className="btn btn--secondary">⚠️ Non conformità</Link>
+        <div style={{ display: 'flex', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
+          <button className="btn btn--secondary" onClick={() => window.print()}>🖨️ Stampa registro</button>
+          <Link href="/non-conformita" className="btn btn--secondary">⚠️ Non conformità</Link>
+        </div>
       </div>
 
       <div className="card" style={{ marginBottom: 'var(--space-6)' }}>
@@ -238,6 +323,7 @@ export default function ControlliPage() {
                 <th>Voce</th>
                 <th>Esito</th>
                 <th>Azione</th>
+                <th className="no-print">Azioni</th>
               </tr>
             </thead>
             <tbody>
@@ -253,10 +339,80 @@ export default function ControlliPage() {
                     </span>
                   </td>
                   <td style={{ color: 'var(--color-text-muted)' }}>{check.corrective_action ?? '—'}</td>
+                  <td className="no-print">
+                    <button className="btn btn--secondary btn--sm" onClick={() => openEditCheck(check)}>
+                      Modifica
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {editingCheck && (
+        <div className="modal-overlay" onClick={() => setEditingCheck(null)}>
+          <div className="modal" onClick={event => event.stopPropagation()}>
+            <div className="modal__header">
+              <h2 className="modal__title">Modifica controllo</h2>
+              <button className="modal__close" onClick={() => setEditingCheck(null)}>×</button>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-4)' }}>
+              <div className="form-group">
+                <label className="form-label">Tipo</label>
+                <select className="input" value={editForm.check_type} onChange={event => setEditForm(prev => ({ ...prev, check_type: event.target.value as OperationalCheckType }))}>
+                  {Object.entries(CHECK_TYPE_LABELS).map(([value, label]) => (
+                    <option key={value} value={value}>{label}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Esito</label>
+                <select className="input" value={String(editForm.is_compliant)} onChange={event => setEditForm(prev => ({ ...prev, is_compliant: event.target.value === 'true' }))}>
+                  <option value="true">Conforme</option>
+                  <option value="false">Non conforme</option>
+                </select>
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-4)', marginTop: 'var(--space-4)' }}>
+              <div className="form-group">
+                <label className="form-label">Area</label>
+                <input className="input" value={editForm.area} onChange={event => setEditForm(prev => ({ ...prev, area: event.target.value }))} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Voce</label>
+                <input className="input" value={editForm.item} onChange={event => setEditForm(prev => ({ ...prev, item: event.target.value }))} />
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-4)', marginTop: 'var(--space-4)' }}>
+              <div className="form-group">
+                <label className="form-label">Atteso</label>
+                <textarea className="input" rows={2} value={editForm.expected_result} onChange={event => setEditForm(prev => ({ ...prev, expected_result: event.target.value }))} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Rilevato</label>
+                <textarea className="input" rows={2} value={editForm.actual_result} onChange={event => setEditForm(prev => ({ ...prev, actual_result: event.target.value }))} />
+              </div>
+            </div>
+
+            {!editForm.is_compliant && (
+              <div className="form-group" style={{ marginTop: 'var(--space-4)' }}>
+                <label className="form-label">Azione correttiva</label>
+                <textarea className="input" rows={3} value={editForm.corrective_action} onChange={event => setEditForm(prev => ({ ...prev, corrective_action: event.target.value }))} />
+              </div>
+            )}
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-3)', marginTop: 'var(--space-6)' }}>
+              <button className="btn btn--secondary" onClick={() => setEditingCheck(null)}>Annulla</button>
+              <button className="btn btn--primary" onClick={handleUpdateCheck} disabled={saving}>
+                {saving ? 'Salvataggio...' : 'Salva modifiche'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

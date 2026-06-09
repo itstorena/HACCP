@@ -21,7 +21,18 @@ export default function LottiPage() {
   const [batches, setBatches] = useState<Batch[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedBatch, setSelectedBatch] = useState<Batch | null>(null)
+  const [editingBatch, setEditingBatch] = useState<Batch | null>(null)
   const [qrUrl, setQrUrl] = useState<string>('')
+  const [editForm, setEditForm] = useState({
+    name: '',
+    description: '',
+    expires_at: '',
+    allergen_notes: '',
+    quantity: '',
+    unit: '',
+    batch_status: 'valid' as Batch['batch_status'],
+    is_active: true,
+  })
   const qrRef = useRef<HTMLDivElement>(null)
 
   const load = useCallback(async () => {
@@ -64,6 +75,45 @@ export default function LottiPage() {
     window.print()
   }, [])
 
+  const openEditBatch = (batch: Batch) => {
+    setEditingBatch(batch)
+    setEditForm({
+      name: batch.name,
+      description: batch.description ?? '',
+      expires_at: batch.expires_at.slice(0, 16),
+      allergen_notes: batch.allergen_notes ?? '',
+      quantity: batch.quantity === null ? '' : String(batch.quantity),
+      unit: batch.unit ?? '',
+      batch_status: batch.batch_status,
+      is_active: batch.is_active,
+    })
+  }
+
+  const handleUpdateBatch = async () => {
+    if (!editingBatch || !editForm.name.trim() || !editForm.expires_at) return
+
+    const quantity = editForm.quantity === '' ? null : Number(editForm.quantity)
+    if (quantity !== null && !Number.isFinite(quantity)) return
+
+    const { error } = await (supabase.from('internal_batches') as any)
+      .update({
+        name: editForm.name.trim(),
+        description: editForm.description.trim() || null,
+        expires_at: new Date(editForm.expires_at).toISOString(),
+        allergen_notes: editForm.allergen_notes.trim() || null,
+        quantity,
+        unit: editForm.unit.trim() || null,
+        batch_status: editForm.batch_status,
+        is_active: editForm.is_active,
+      })
+      .eq('id', editingBatch.id)
+
+    if (!error) {
+      setEditingBatch(null)
+      await load()
+    }
+  }
+
   return (
     <div>
       <div className="page-header">
@@ -72,6 +122,7 @@ export default function LottiPage() {
           <p className="page-subtitle">Preparazioni interne con etichetta QR — {batches.length} registrati</p>
         </div>
         <div style={{ display: 'flex', gap: 'var(--space-3)' }}>
+          <button className="btn btn--secondary" onClick={() => window.print()}>🖨️ Stampa registro</button>
           <Link href="/lotti/scansiona" className="btn btn--secondary">📷 Scansiona QR</Link>
           <Link href="/lotti/nuovo" className="btn btn--primary">+ Nuovo Lotto</Link>
         </div>
@@ -126,12 +177,20 @@ export default function LottiPage() {
                     {batch.qr_code_token.slice(0, 16)}…
                   </code>
                 </div>
-                <button
-                  className="btn btn--secondary btn--sm btn--full"
-                  onClick={() => showQR(batch)}
-                >
-                  🏷️ Mostra Etichetta QR
-                </button>
+                <div className="no-print" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-2)' }}>
+                  <button
+                    className="btn btn--secondary btn--sm"
+                    onClick={() => showQR(batch)}
+                  >
+                    🏷️ Etichetta
+                  </button>
+                  <button
+                    className="btn btn--secondary btn--sm"
+                    onClick={() => openEditBatch(batch)}
+                  >
+                    Modifica
+                  </button>
+                </div>
               </div>
             )
           })}
@@ -172,6 +231,71 @@ export default function LottiPage() {
             <div style={{ display: 'flex', gap: 'var(--space-3)', marginTop: 'var(--space-6)', justifyContent: 'flex-end' }}>
               <button className="btn btn--secondary" onClick={() => setSelectedBatch(null)}>Chiudi</button>
               <button className="btn btn--primary" onClick={printLabel}>🖨️ Stampa Etichetta</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {editingBatch && (
+        <div className="modal-overlay" onClick={() => setEditingBatch(null)}>
+          <div className="modal" onClick={event => event.stopPropagation()}>
+            <div className="modal__header">
+              <h2 className="modal__title">Modifica lotto interno</h2>
+              <button className="modal__close" onClick={() => setEditingBatch(null)}>×</button>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Nome</label>
+              <input className="input" value={editForm.name} onChange={event => setEditForm(prev => ({ ...prev, name: event.target.value }))} />
+            </div>
+
+            <div className="form-group" style={{ marginTop: 'var(--space-4)' }}>
+              <label className="form-label">Descrizione</label>
+              <textarea className="input" rows={3} value={editForm.description} onChange={event => setEditForm(prev => ({ ...prev, description: event.target.value }))} />
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-4)', marginTop: 'var(--space-4)' }}>
+              <div className="form-group">
+                <label className="form-label">Scadenza</label>
+                <input type="datetime-local" className="input" value={editForm.expires_at} onChange={event => setEditForm(prev => ({ ...prev, expires_at: event.target.value }))} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Stato</label>
+                <select className="input" value={editForm.batch_status} onChange={event => setEditForm(prev => ({ ...prev, batch_status: event.target.value as Batch['batch_status'] }))}>
+                  <option value="valid">Valido</option>
+                  <option value="blocked">Bloccato</option>
+                  <option value="used">Usato</option>
+                  <option value="discarded">Scartato</option>
+                </select>
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 'var(--space-4)', marginTop: 'var(--space-4)' }}>
+              <div className="form-group">
+                <label className="form-label">Quantità</label>
+                <input type="number" step="0.01" className="input" value={editForm.quantity} onChange={event => setEditForm(prev => ({ ...prev, quantity: event.target.value }))} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Unità</label>
+                <input className="input" value={editForm.unit} onChange={event => setEditForm(prev => ({ ...prev, unit: event.target.value }))} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Attivo</label>
+                <select className="input" value={String(editForm.is_active)} onChange={event => setEditForm(prev => ({ ...prev, is_active: event.target.value === 'true' }))}>
+                  <option value="true">Sì</option>
+                  <option value="false">No</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="form-group" style={{ marginTop: 'var(--space-4)' }}>
+              <label className="form-label">Allergeni</label>
+              <textarea className="input" rows={2} value={editForm.allergen_notes} onChange={event => setEditForm(prev => ({ ...prev, allergen_notes: event.target.value }))} />
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-3)', marginTop: 'var(--space-6)' }}>
+              <button className="btn btn--secondary" onClick={() => setEditingBatch(null)}>Annulla</button>
+              <button className="btn btn--primary" onClick={handleUpdateBatch}>Salva modifiche</button>
             </div>
           </div>
         </div>

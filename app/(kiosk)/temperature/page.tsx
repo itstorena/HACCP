@@ -48,6 +48,16 @@ export default function TemperaturePage() {
   const [temperature, setTemperature] = useState('')
   const [notes, setNotes] = useState('')
   const [correctiveAction, setCorrectiveAction] = useState('')
+  const [editingLog, setEditingLog] = useState<TemperatureLog | null>(null)
+  const [editForm, setEditForm] = useState({
+    equipment_name: '',
+    temperature: '',
+    min_threshold: '',
+    max_threshold: '',
+    is_compliant: true,
+    corrective_action: '',
+    notes: '',
+  })
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
 
@@ -153,6 +163,89 @@ export default function TemperaturePage() {
     setSaving(false)
   }
 
+  const openEditLog = (log: TemperatureLog) => {
+    setEditingLog(log)
+    setEditForm({
+      equipment_name: log.equipment_name,
+      temperature: String(log.temperature),
+      min_threshold: log.min_threshold === null ? '' : String(log.min_threshold),
+      max_threshold: log.max_threshold === null ? '' : String(log.max_threshold),
+      is_compliant: log.is_compliant,
+      corrective_action: log.corrective_action ?? '',
+      notes: log.notes ?? '',
+    })
+  }
+
+  const handleUpdateLog = async () => {
+    if (!editingLog) return
+
+    const value = Number(editForm.temperature)
+    const min = editForm.min_threshold === '' ? null : Number(editForm.min_threshold)
+    const max = editForm.max_threshold === '' ? null : Number(editForm.max_threshold)
+
+    if (!editForm.equipment_name.trim() || !Number.isFinite(value)) {
+      addToast({ type: 'error', message: 'Attrezzatura e temperatura valida sono obbligatorie.' })
+      return
+    }
+
+    if ((min !== null && !Number.isFinite(min)) || (max !== null && !Number.isFinite(max))) {
+      addToast({ type: 'error', message: 'Le soglie devono essere numeri validi.' })
+      return
+    }
+
+    const compliant = isTemperatureCompliant(value, min, max)
+    if (!compliant && !editForm.corrective_action.trim()) {
+      addToast({ type: 'error', message: 'Per una temperatura fuori soglia serve una azione correttiva.' })
+      return
+    }
+
+    setSaving(true)
+    const { error } = await (supabase.from('temperature_logs') as any)
+      .update({
+        equipment_name: editForm.equipment_name.trim(),
+        temperature: value,
+        min_threshold: min,
+        max_threshold: max,
+        is_compliant: compliant,
+        corrective_action: compliant ? null : editForm.corrective_action.trim(),
+        notes: editForm.notes.trim() || null,
+      })
+      .eq('id', editingLog.id)
+
+    if (error) {
+      addToast({ type: 'error', message: `Errore: ${error.message}` })
+      setSaving(false)
+      return
+    }
+
+    if (!compliant) {
+      const { data: existing } = await (supabase.from('non_conformities') as any)
+        .select('id')
+        .eq('related_table', 'temperature_logs')
+        .eq('related_id', editingLog.id)
+        .limit(1)
+
+      if (!existing || existing.length === 0) {
+        await (supabase.from('non_conformities') as any).insert({
+          source_type: 'temperature',
+          severity: inferTemperatureSeverity(value, min, max),
+          title: `Temperatura fuori soglia - ${editForm.equipment_name.trim()}`,
+          description: `${editForm.equipment_name.trim()}: rilevati ${value} C, soglia ${formatRange(min, max)}.`,
+          detected_by: currentStaff?.id ?? null,
+          related_table: 'temperature_logs',
+          related_id: editingLog.id,
+          immediate_action: editForm.corrective_action.trim(),
+          corrective_action: editForm.corrective_action.trim(),
+        })
+      }
+    }
+
+    addToast({ type: 'success', message: 'Registrazione temperatura aggiornata.' })
+    setEditingLog(null)
+    await load()
+    setSaving(false)
+  }
+
   return (
     <div>
       <div className="page-header">
@@ -160,7 +253,10 @@ export default function TemperaturePage() {
           <h1 className="page-title">🌡️ Temperature</h1>
           <p className="page-subtitle">Registro giornaliero frigo, freezer e attrezzature critiche</p>
         </div>
-        <Link href="/non-conformita" className="btn btn--secondary">⚠️ Non conformità</Link>
+        <div style={{ display: 'flex', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
+          <button className="btn btn--secondary" onClick={() => window.print()}>🖨️ Stampa registro</button>
+          <Link href="/non-conformita" className="btn btn--secondary">⚠️ Non conformità</Link>
+        </div>
       </div>
 
       <div className="card" style={{ marginBottom: 'var(--space-6)' }}>
@@ -264,6 +360,7 @@ export default function TemperaturePage() {
                 <th>Soglia</th>
                 <th>Stato</th>
                 <th>Azione</th>
+                <th className="no-print">Azioni</th>
               </tr>
             </thead>
             <tbody>
@@ -279,10 +376,63 @@ export default function TemperaturePage() {
                     </span>
                   </td>
                   <td style={{ color: 'var(--color-text-muted)' }}>{log.corrective_action ?? '—'}</td>
+                  <td className="no-print">
+                    <button className="btn btn--secondary btn--sm" onClick={() => openEditLog(log)}>
+                      Modifica
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {editingLog && (
+        <div className="modal-overlay" onClick={() => setEditingLog(null)}>
+          <div className="modal" onClick={event => event.stopPropagation()}>
+            <div className="modal__header">
+              <h2 className="modal__title">Modifica temperatura</h2>
+              <button className="modal__close" onClick={() => setEditingLog(null)}>×</button>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Attrezzatura</label>
+              <input className="input" value={editForm.equipment_name} onChange={event => setEditForm(prev => ({ ...prev, equipment_name: event.target.value }))} />
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 'var(--space-4)', marginTop: 'var(--space-4)' }}>
+              <div className="form-group">
+                <label className="form-label">Temperatura</label>
+                <input className="input" type="number" step="0.1" value={editForm.temperature} onChange={event => setEditForm(prev => ({ ...prev, temperature: event.target.value }))} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Min</label>
+                <input className="input" type="number" step="0.1" value={editForm.min_threshold} onChange={event => setEditForm(prev => ({ ...prev, min_threshold: event.target.value }))} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Max</label>
+                <input className="input" type="number" step="0.1" value={editForm.max_threshold} onChange={event => setEditForm(prev => ({ ...prev, max_threshold: event.target.value }))} />
+              </div>
+            </div>
+
+            <div className="form-group" style={{ marginTop: 'var(--space-4)' }}>
+              <label className="form-label">Azione correttiva</label>
+              <textarea className="input" rows={3} value={editForm.corrective_action} onChange={event => setEditForm(prev => ({ ...prev, corrective_action: event.target.value }))} />
+            </div>
+
+            <div className="form-group" style={{ marginTop: 'var(--space-4)' }}>
+              <label className="form-label">Note</label>
+              <textarea className="input" rows={2} value={editForm.notes} onChange={event => setEditForm(prev => ({ ...prev, notes: event.target.value }))} />
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-3)', marginTop: 'var(--space-6)' }}>
+              <button className="btn btn--secondary" onClick={() => setEditingLog(null)}>Annulla</button>
+              <button className="btn btn--primary" onClick={handleUpdateLog} disabled={saving}>
+                {saving ? 'Salvataggio...' : 'Salva modifiche'}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
