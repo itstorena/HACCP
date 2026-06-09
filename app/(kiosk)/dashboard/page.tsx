@@ -3,14 +3,15 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { useStaffStore } from '@/store/staffStore'
-import { formatDate, formatDateTime } from '@/lib/utils/formatting'
-import { getBatchExpiryStatus } from '@/lib/utils/compliance'
 
 interface DashboardStats {
   activeBlastCycles: number
   expiringBatches: number
   todaySuppliers: number
   nonCompliantToday: number
+  openNonConformities: number
+  todayTemperatureLogs: number
+  todayChecks: number
 }
 
 export default function DashboardPage() {
@@ -21,6 +22,9 @@ export default function DashboardPage() {
     expiringBatches: 0,
     todaySuppliers: 0,
     nonCompliantToday: 0,
+    openNonConformities: 0,
+    todayTemperatureLogs: 0,
+    todayChecks: 0,
   })
   const [loading, setLoading] = useState(true)
   const now = new Date()
@@ -30,11 +34,14 @@ export default function DashboardPage() {
       const today = new Date().toISOString().split('T')[0]
       const in48h = new Date(Date.now() + 48 * 3600000).toISOString()
 
-      const [blastRes, batchRes, supplierRes, nonComplRes] = await Promise.all([
+      const [blastRes, batchRes, supplierRes, nonComplRes, ncRes, tempRes, checksRes] = await Promise.all([
         supabase.from('blast_chiller_logs').select('id', { count: 'exact' }).is('end_time', null),
         supabase.from('internal_batches').select('expires_at').eq('is_active', true).lte('expires_at', in48h),
         supabase.from('supplier_batches').select('id', { count: 'exact' }).gte('created_at', `${today}T00:00:00`),
         supabase.from('blast_chiller_logs').select('id', { count: 'exact' }).eq('is_compliant', false).gte('created_at', `${today}T00:00:00`),
+        supabase.from('non_conformities').select('id', { count: 'exact' }).in('status', ['open', 'in_progress']),
+        supabase.from('temperature_logs').select('id', { count: 'exact' }).gte('recorded_at', `${today}T00:00:00`),
+        supabase.from('operational_checks').select('id', { count: 'exact' }).gte('checked_at', `${today}T00:00:00`),
       ])
 
       setStats({
@@ -42,6 +49,9 @@ export default function DashboardPage() {
         expiringBatches: batchRes.data?.length ?? 0,
         todaySuppliers: supplierRes.count ?? 0,
         nonCompliantToday: nonComplRes.count ?? 0,
+        openNonConformities: ncRes.count ?? 0,
+        todayTemperatureLogs: tempRes.count ?? 0,
+        todayChecks: checksRes.count ?? 0,
       })
       setLoading(false)
     }
@@ -52,7 +62,10 @@ export default function DashboardPage() {
     { href: '/fornitori/nuovo', icon: '📦', label: 'Nuovo Fornitore', color: 'var(--color-info)' },
     { href: '/lotti/nuovo', icon: '🏷️', label: 'Nuovo Lotto', color: 'var(--color-success)' },
     { href: '/abbattimento/nuovo', icon: '🧊', label: 'Avvia Abbattimento', color: 'var(--color-primary)' },
+    { href: '/temperature', icon: '🌡️', label: 'Registra Temperatura', color: 'var(--color-info)' },
+    { href: '/controlli', icon: '🧽', label: 'Registra Controllo', color: 'var(--color-success)' },
     { href: '/lotti/scansiona', icon: '📷', label: 'Scansiona QR', color: 'var(--color-warning)' },
+    { href: '/non-conformita', icon: '⚠️', label: 'Segnala Problema', color: 'var(--color-danger)' },
   ]
 
   return (
@@ -90,9 +103,19 @@ export default function DashboardPage() {
             <div className="kpi-sub">registrati oggi</div>
           </div>
           <div className={`kpi-card kpi-card--${stats.nonCompliantToday > 0 ? 'danger' : 'success'}`}>
-            <div className="kpi-label">Non Conformi</div>
-            <div className="kpi-value">{stats.nonCompliantToday}</div>
-            <div className="kpi-sub">cicli oggi</div>
+            <div className="kpi-label">NC Aperte</div>
+            <div className="kpi-value">{stats.openNonConformities}</div>
+            <div className="kpi-sub">{stats.nonCompliantToday} cicli non conformi oggi</div>
+          </div>
+          <div className="kpi-card kpi-card--info">
+            <div className="kpi-label">Temperature</div>
+            <div className="kpi-value">{stats.todayTemperatureLogs}</div>
+            <div className="kpi-sub">registrazioni oggi</div>
+          </div>
+          <div className="kpi-card kpi-card--success">
+            <div className="kpi-label">Controlli</div>
+            <div className="kpi-value">{stats.todayChecks}</div>
+            <div className="kpi-sub">checklist oggi</div>
           </div>
         </div>
       )}

@@ -13,6 +13,7 @@ const navItems = [
   { href: '/lotti', label: 'Lotti', icon: '🏷️' },
   { href: '/abbattimento', label: 'Abbattitore', icon: '🧊' },
   { href: '/temperature', label: 'Temperature', icon: '🌡️' },
+  { href: '/controlli', label: 'Controlli', icon: '🧽' },
   { href: '/non-conformita', label: 'NC', icon: '⚠️' },
 ]
 

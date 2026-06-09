@@ -6,7 +6,8 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { createClient } from '@/lib/supabase/client'
 import { useToastStore } from '@/store/toastStore'
-import { checkBlastCompliance, BLAST_CYCLE_TARGETS } from '@/lib/utils/compliance'
+import { useStaffStore } from '@/store/staffStore'
+import { checkBlastComplianceAgainstTarget, BLAST_CYCLE_TARGETS } from '@/lib/utils/compliance'
 import { formatDateTime, formatTemp } from '@/lib/utils/formatting'
 import Link from 'next/link'
 import type { Database } from '@/types/database'
@@ -27,6 +28,7 @@ export default function ChiudiCicloPage() {
   const router = useRouter()
   const supabase = createClient()
   const { addToast } = useToastStore()
+  const { currentStaff } = useStaffStore()
   const [cycle, setCycle] = useState<BlastLog | null>(null)
   const [loading, setLoading] = useState(false)
   const [fetchLoading, setFetchLoading] = useState(true)
@@ -48,8 +50,9 @@ export default function ChiudiCicloPage() {
   })
 
   const endTemp = watch('end_temp')
+  const targetTemp = cycle?.target_temp ?? (cycle ? BLAST_CYCLE_TARGETS[cycle.cycle_type].targetTemp : 0)
   const isCompliant = cycle
-    ? checkBlastCompliance(cycle.cycle_type, cycle.start_time, new Date().toISOString(), endTemp)
+    ? checkBlastComplianceAgainstTarget(cycle.start_time, new Date().toISOString(), endTemp, targetTemp, cycle.target_time_minutes)
     : null
 
   const onSubmit = async (data: FormData) => {
@@ -57,7 +60,8 @@ export default function ChiudiCicloPage() {
     setLoading(true)
 
     const endTime = new Date().toISOString()
-    const compliant = checkBlastCompliance(cycle.cycle_type, cycle.start_time, endTime, data.end_temp)
+    const cycleTargetTemp = cycle.target_temp ?? BLAST_CYCLE_TARGETS[cycle.cycle_type].targetTemp
+    const compliant = checkBlastComplianceAgainstTarget(cycle.start_time, endTime, data.end_temp, cycleTargetTemp, cycle.target_time_minutes)
 
     const { error } = await (supabase.from('blast_chiller_logs') as any)
       .update({
@@ -65,6 +69,7 @@ export default function ChiudiCicloPage() {
         end_temp: data.end_temp,
         is_compliant: compliant,
         corrective_action: !compliant ? (data.corrective_action ?? null) : null,
+        verified_by: currentStaff?.id ?? null,
         notes: data.notes ?? null,
       })
       .eq('id', id)
@@ -73,6 +78,20 @@ export default function ChiudiCicloPage() {
       addToast({ type: 'error', message: `Errore: ${error.message}` })
       setLoading(false)
       return
+    }
+
+    if (!compliant) {
+      await supabase.from('non_conformities').insert({
+        source_type: 'blast_chiller',
+        severity: 'high',
+        title: 'Ciclo abbattitore non conforme',
+        description: `Temperatura finale ${data.end_temp} C su target ${cycleTargetTemp} C entro ${cycle.target_time_minutes} minuti.`,
+        detected_by: currentStaff?.id ?? null,
+        related_table: 'blast_chiller_logs',
+        related_id: id,
+        immediate_action: data.corrective_action ?? 'Lotto isolato in attesa di valutazione.',
+        corrective_action: data.corrective_action ?? null,
+      })
     }
 
     addToast({
@@ -126,7 +145,7 @@ export default function ChiudiCicloPage() {
           </div>
           <div>
             <div style={{ color: 'var(--color-text-muted)', fontSize: 'var(--text-xs)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Target</div>
-            <div style={{ fontWeight: 600 }}>≤{target.targetTemp}°C in {cycle.target_time_minutes}min</div>
+            <div style={{ fontWeight: 600 }}>≤{targetTemp}°C in {cycle.target_time_minutes}min</div>
           </div>
           {endTemp !== undefined && isCompliant !== null && (
             <div>
@@ -155,7 +174,7 @@ export default function ChiudiCicloPage() {
             {errors.end_temp && <span className="form-error">{errors.end_temp.message}</span>}
             {endTemp !== undefined && isCompliant === false && (
               <div style={{ color: 'var(--color-warning)', fontSize: 'var(--text-sm)', marginTop: 'var(--space-1)' }}>
-                ⚠️ Temperatura sopra il target ({target.targetTemp}°C) — ciclo NON conforme
+                ⚠️ Temperatura sopra il target ({targetTemp}°C) — ciclo NON conforme
               </div>
             )}
           </div>

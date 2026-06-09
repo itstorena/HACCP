@@ -44,6 +44,7 @@ export interface Database {
           is_active?: boolean
           created_at?: string
         }
+        Relationships: []
       }
       supplier_batches: {
         Row: {
@@ -106,6 +107,7 @@ export interface Database {
           notes?: string | null
           created_at?: string
         }
+        Relationships: []
       }
       internal_batches: {
         Row: {
@@ -159,6 +161,7 @@ export interface Database {
           is_active?: boolean
           created_at?: string
         }
+        Relationships: []
       }
       blast_chiller_logs: {
         Row: {
@@ -171,6 +174,7 @@ export interface Database {
           end_time: string | null
           start_temp: number
           end_temp: number | null
+          target_temp: number | null
           target_time_minutes: number
           probe_code: string | null
           quantity: number | null
@@ -192,6 +196,7 @@ export interface Database {
           end_time?: string | null
           start_temp: number
           end_temp?: number | null
+          target_temp?: number | null
           target_time_minutes: number
           probe_code?: string | null
           quantity?: number | null
@@ -213,6 +218,7 @@ export interface Database {
           end_time?: string | null
           start_temp?: number
           end_temp?: number | null
+          target_temp?: number | null
           target_time_minutes?: number
           probe_code?: string | null
           quantity?: number | null
@@ -224,6 +230,7 @@ export interface Database {
           notes?: string | null
           created_at?: string
         }
+        Relationships: []
       }
       blast_chiller_profiles: {
         Row: {
@@ -256,7 +263,22 @@ export interface Database {
           is_active?: boolean
           created_at?: string
         }
-        Update: Partial<Database['public']['Tables']['blast_chiller_profiles']['Insert']>
+        Update: {
+          id?: string
+          code?: string
+          label?: string
+          cycle_type?: BlastCycleType
+          product_category?: string
+          target_temp?: number
+          target_time_minutes?: number
+          min_start_temp?: number | null
+          legal_reference?: string | null
+          notes?: string | null
+          is_default?: boolean
+          is_active?: boolean
+          created_at?: string
+        }
+        Relationships: []
       }
       equipment: {
         Row: {
@@ -281,7 +303,18 @@ export interface Database {
           is_active?: boolean
           created_at?: string
         }
-        Update: Partial<Database['public']['Tables']['equipment']['Insert']>
+        Update: {
+          id?: string
+          name?: string
+          equipment_type?: EquipmentType
+          location?: string | null
+          min_temp?: number | null
+          max_temp?: number | null
+          check_frequency_hours?: number
+          is_active?: boolean
+          created_at?: string
+        }
+        Relationships: []
       }
       temperature_logs: {
         Row: {
@@ -323,6 +356,7 @@ export interface Database {
           recorded_by?: string | null
           recorded_at?: string
         }
+        Relationships: []
       }
       operational_checks: {
         Row: {
@@ -351,7 +385,20 @@ export interface Database {
           checked_at?: string
           created_at?: string
         }
-        Update: Partial<Database['public']['Tables']['operational_checks']['Insert']>
+        Update: {
+          id?: string
+          check_type?: OperationalCheckType
+          area?: string
+          item?: string
+          expected_result?: string | null
+          actual_result?: string | null
+          is_compliant?: boolean
+          corrective_action?: string | null
+          checked_by?: string | null
+          checked_at?: string
+          created_at?: string
+        }
+        Relationships: []
       }
       internal_batch_ingredients: {
         Row: {
@@ -374,7 +421,17 @@ export interface Database {
           notes?: string | null
           created_at?: string
         }
-        Update: Partial<Database['public']['Tables']['internal_batch_ingredients']['Insert']>
+        Update: {
+          id?: string
+          internal_batch_id?: string | null
+          supplier_batch_id?: string | null
+          ingredient_name?: string
+          quantity?: number | null
+          unit?: string | null
+          notes?: string | null
+          created_at?: string
+        }
+        Relationships: []
       }
       haccp_plan_items: {
         Row: {
@@ -407,7 +464,22 @@ export interface Database {
           is_active?: boolean
           created_at?: string
         }
-        Update: Partial<Database['public']['Tables']['haccp_plan_items']['Insert']>
+        Update: {
+          id?: string
+          code?: string
+          area?: string
+          process_step?: string
+          hazard?: string
+          control_measure?: string
+          critical_limit?: string
+          monitoring_frequency?: string
+          corrective_action?: string
+          owner_role?: StaffRole
+          is_ccp?: boolean
+          is_active?: boolean
+          created_at?: string
+        }
+        Relationships: []
       }
       non_conformities: {
         Row: {
@@ -448,7 +520,26 @@ export interface Database {
           manager_notes?: string | null
           created_at?: string
         }
-        Update: Partial<Database['public']['Tables']['non_conformities']['Insert']>
+        Update: {
+          id?: string
+          source_type?: NonConformitySource
+          severity?: NonConformitySeverity
+          status?: NonConformityStatus
+          title?: string
+          description?: string
+          detected_at?: string
+          detected_by?: string | null
+          related_table?: string | null
+          related_id?: string | null
+          immediate_action?: string | null
+          corrective_action?: string | null
+          preventive_action?: string | null
+          closed_at?: string | null
+          closed_by?: string | null
+          manager_notes?: string | null
+          created_at?: string
+        }
+        Relationships: []
       }
       audit_logs: {
         Row: {
@@ -473,7 +564,18 @@ export interface Database {
           after_data?: Json | null
           created_at?: string
         }
-        Update: Partial<Database['public']['Tables']['audit_logs']['Insert']>
+        Update: {
+          id?: string
+          table_name?: string
+          record_id?: string | null
+          action?: 'insert' | 'update' | 'delete' | 'login' | 'report' | 'print'
+          actor_id?: string | null
+          actor_label?: string | null
+          before_data?: Json | null
+          after_data?: Json | null
+          created_at?: string
+        }
+        Relationships: []
       }
     }
     Views: Record<string, never>

@@ -1,7 +1,6 @@
 'use client'
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import { formatDate } from '@/lib/utils/formatting'
 
 interface Stats {
   blastToday: number
@@ -9,12 +8,17 @@ interface Stats {
   expiringBatches: number
   staffCount: number
   supplierToday: number
+  openNonConformities: number
+  tempOutOfRangeToday: number
+  checksToday: number
+  failedChecksToday: number
 }
 
 export default function ManagerPage() {
   const supabase = createClient()
   const [stats, setStats] = useState<Stats | null>(null)
   const [recentLogs, setRecentLogs] = useState<unknown[]>([])
+  const [recentNonConformities, setRecentNonConformities] = useState<Record<string, unknown>[]>([])
 
   useEffect(() => {
     const today = new Date().toISOString().split('T')[0]
@@ -28,15 +32,25 @@ export default function ManagerPage() {
       supabase.from('staff_members').select('id', { count: 'exact' }).eq('is_active', true),
       supabase.from('supplier_batches').select('id', { count: 'exact' }).gte('created_at', `${today}T00:00:00`),
       supabase.from('blast_chiller_logs').select('*, internal_batches(name)').order('created_at', { ascending: false }).limit(10),
-    ]).then(([blast, nonCompl, expiring, staff, suppliers, logs]) => {
+      supabase.from('non_conformities').select('id', { count: 'exact' }).in('status', ['open', 'in_progress']),
+      supabase.from('temperature_logs').select('id', { count: 'exact' }).eq('is_compliant', false).gte('recorded_at', `${today}T00:00:00`),
+      supabase.from('operational_checks').select('id', { count: 'exact' }).gte('checked_at', `${today}T00:00:00`),
+      supabase.from('operational_checks').select('id', { count: 'exact' }).eq('is_compliant', false).gte('checked_at', `${today}T00:00:00`),
+      supabase.from('non_conformities').select('*').order('detected_at', { ascending: false }).limit(8),
+    ]).then(([blast, nonCompl, expiring, staff, suppliers, logs, openNc, tempKo, checks, failedChecks, recentNc]) => {
       setStats({
         blastToday: blast.count ?? 0,
         nonCompliantMonth: nonCompl.count ?? 0,
         expiringBatches: expiring.count ?? 0,
         staffCount: staff.count ?? 0,
         supplierToday: suppliers.count ?? 0,
+        openNonConformities: openNc.count ?? 0,
+        tempOutOfRangeToday: tempKo.count ?? 0,
+        checksToday: checks.count ?? 0,
+        failedChecksToday: failedChecks.count ?? 0,
       })
       setRecentLogs(logs.data ?? [])
+      setRecentNonConformities((recentNc.data ?? []) as Record<string, unknown>[])
     })
   }, [])
 
@@ -68,9 +82,22 @@ export default function ManagerPage() {
               <div className="kpi-label">Non Conformità (mese)</div>
               <div className="kpi-value">{stats.nonCompliantMonth}</div>
             </div>
+            <div className={`kpi-card kpi-card--${stats.openNonConformities > 0 ? 'danger' : 'success'}`}>
+              <div className="kpi-label">NC Aperte</div>
+              <div className="kpi-value">{stats.openNonConformities}</div>
+            </div>
             <div className={`kpi-card kpi-card--${stats.expiringBatches > 0 ? 'danger' : 'success'}`}>
               <div className="kpi-label">Lotti in Scadenza 48h</div>
               <div className="kpi-value">{stats.expiringBatches}</div>
+            </div>
+            <div className={`kpi-card kpi-card--${stats.tempOutOfRangeToday > 0 ? 'danger' : 'success'}`}>
+              <div className="kpi-label">Temperature KO Oggi</div>
+              <div className="kpi-value">{stats.tempOutOfRangeToday}</div>
+            </div>
+            <div className={`kpi-card kpi-card--${stats.failedChecksToday > 0 ? 'danger' : 'success'}`}>
+              <div className="kpi-label">Controlli Oggi</div>
+              <div className="kpi-value">{stats.checksToday}</div>
+              <div className="kpi-sub">{stats.failedChecksToday} non conformi</div>
             </div>
             <div className="kpi-card kpi-card--info">
               <div className="kpi-label">Staff Attivo</div>
@@ -81,6 +108,42 @@ export default function ManagerPage() {
               <div className="kpi-value">{stats.supplierToday}</div>
             </div>
           </div>
+
+          {recentNonConformities.length > 0 && (
+            <div style={{ marginBottom: 'var(--space-8)' }}>
+              <h2 style={{ fontSize: 'var(--text-lg)', fontWeight: 700, marginBottom: 'var(--space-4)' }}>
+                ⚠️ Ultime Non Conformità
+              </h2>
+              <div className="table-container">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Data</th>
+                      <th>Titolo</th>
+                      <th>Origine</th>
+                      <th>Gravità</th>
+                      <th>Stato</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {recentNonConformities.map((item) => (
+                      <tr key={item.id as string}>
+                        <td>{new Date(item.detected_at as string).toLocaleString('it-IT')}</td>
+                        <td style={{ fontWeight: 600 }}>{item.title as string}</td>
+                        <td>{item.source_type as string}</td>
+                        <td>{item.severity as string}</td>
+                        <td>
+                          <span className={`badge ${(item.status as string) === 'closed' ? 'badge--success' : 'badge--warning'}`}>
+                            {item.status as string}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
 
           {/* Ultimi log */}
           <div>

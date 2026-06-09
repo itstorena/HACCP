@@ -66,6 +66,7 @@ CREATE TABLE IF NOT EXISTS blast_chiller_profiles (
 ALTER TABLE blast_chiller_logs
   ADD COLUMN IF NOT EXISTS profile_id UUID REFERENCES blast_chiller_profiles(id) ON DELETE SET NULL,
   ADD COLUMN IF NOT EXISTS product_category VARCHAR(80),
+  ADD COLUMN IF NOT EXISTS target_temp DECIMAL(4,1),
   ADD COLUMN IF NOT EXISTS probe_code VARCHAR(80),
   ADD COLUMN IF NOT EXISTS quantity DECIMAL(8,2),
   ADD COLUMN IF NOT EXISTS unit VARCHAR(20),

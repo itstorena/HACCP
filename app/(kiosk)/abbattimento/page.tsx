@@ -14,7 +14,7 @@ export default function AbbattimentoPage() {
   const [activeCycles, setActiveCycles] = useState<BlastLog[]>([])
   const [recentCycles, setRecentCycles] = useState<BlastLog[]>([])
   const [loading, setLoading] = useState(true)
-  const [tick, setTick] = useState(0)
+  const [, setTick] = useState(0)
 
   const load = useCallback(async () => {
     const { data } = await (supabase.from('blast_chiller_logs') as any)
@@ -84,6 +84,7 @@ export default function AbbattimentoPage() {
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 'var(--space-4)' }}>
             {activeCycles.map((cycle) => {
               const target = BLAST_CYCLE_TARGETS[cycle.cycle_type]
+              const targetTemp = cycle.target_temp ?? target.targetTemp
               const remaining = getRemainingMinutes(cycle.start_time, cycle.target_time_minutes) * 60 * 1000
               const progress = getCycleProgress(cycle.start_time, cycle.target_time_minutes)
               const isOvertime = remaining <= 0
@@ -120,7 +121,7 @@ export default function AbbattimentoPage() {
                     </div>
                     <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', marginTop: 'var(--space-1)' }}>
                       <span>Temp. inizio: {formatTemp(cycle.start_temp)}</span>
-                      <span>Target: {target.targetTemp}°C in {cycle.target_time_minutes}min</span>
+                      <span>Target: {targetTemp}°C in {cycle.target_time_minutes}min</span>
                     </div>
                   </div>
 

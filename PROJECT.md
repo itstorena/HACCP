@@ -6,10 +6,14 @@
 
 ## 📌 Panoramica
 
-App Next.js 14+ (App Router) per la digitalizzazione dei registri HACCP in un ristorante. Gestisce:
+App Next.js 16 (App Router) per la digitalizzazione dei registri HACCP in un ristorante. Gestisce:
 - 📦 **Tracciabilità fornitori** (lotti in ingresso)
 - 🏷️ **Lotti interni** con etichette QR code stampabili
 - 🧊 **Abbattitore termico** con timer realtime e verifica conformità
+- 🌡️ **Registro temperature** frigo/freezer/attrezzature con non conformità automatiche
+- 🧽 **Controlli operativi** pulizie, allergeni, infestanti, olio, manutenzione, formazione
+- ⚠️ **Non conformità** con azioni correttive e chiusura manager
+- 📋 **Piano HACCP** con CCP/PRP e profili abbattitore configurabili
 - 👤 **Autenticazione staff** via PIN numerico (bcrypt)
 - 📊 **Dashboard manager** con KPI e report mensile stampabile
 
@@ -19,11 +23,11 @@ App Next.js 14+ (App Router) per la digitalizzazione dei registri HACCP in un ri
 
 | Layer | Tecnologia |
 |-------|-----------|
-| Frontend | Next.js 14+ (App Router) |
+| Frontend | Next.js 16 (App Router) |
 | Styling | Vanilla CSS (no Tailwind) — Design system custom |
 | Backend | Supabase (PostgreSQL + Realtime + RLS) |
 | Auth staff | PIN numerico + bcryptjs (sessionStorage) |
-| Auth manager | Supabase Auth (TODO: da completare) |
+| Auth manager | Supabase Auth + `proxy.ts` |
 | State | Zustand (staffStore, toastStore) |
 | Forms | React Hook Form + Zod |
 | QR Code | qrcode (generazione) + html5-qrcode (scansione camera) |
@@ -102,6 +106,13 @@ haccp-app/
 | `internal_batches` | Preparazioni interne con QR token | ✅ |
 | `blast_chiller_logs` | Cicli abbattitore termico | ✅ |
 | `temperature_logs` | Registrazioni temperature equipment | ✅ |
+| `haccp_plan_items` | Piano HACCP, CCP/PRP, limiti e azioni | - |
+| `blast_chiller_profiles` | Profili abbattitore configurabili | - |
+| `equipment` | Attrezzature monitorate | - |
+| `operational_checks` | Pulizie, allergeni, infestanti, olio, manutenzioni | ✅ |
+| `non_conformities` | Non conformità e azioni correttive | ✅ |
+| `internal_batch_ingredients` | Collegamento lotti interni ↔ lotti fornitore | - |
+| `audit_logs` | Audit trail applicativo | - |
 
 ### Regole di conformità abbattitore (Reg. CE 853/2004)
 - **Positivo (+3°C):** Da +70°C → +3°C in max 90 minuti
@@ -125,7 +136,7 @@ npm install
 Le credenziali sono già in `.env.local`. Template in `.env.local.example`.
 
 ### 3. Eseguire Migration SQL ⚠️
-> La migration deve essere eseguita manualmente via Supabase SQL Editor.
+> Le migration devono essere eseguite manualmente via Supabase SQL Editor.
 > Vedi [MIGRATION.md](./MIGRATION.md) per istruzioni dettagliate.
 >
 > URL: https://supabase.com/dashboard/project/kqpguexaexwtfwizsaxq/sql
@@ -218,15 +229,19 @@ Il modulo `lib/utils/compliance.ts` implementa:
 
 ## 🔮 TODO / Prossimi Sviluppi
 
-- [ ] Middleware Next.js per proteggere route `/manager`
-- [ ] Supabase Auth per manager (email + password)
+- [x] Proxy Next.js per proteggere route `/manager`
+- [x] Supabase Auth per manager (email + password)
+- [x] Piano HACCP operativo con CCP/PRP
+- [x] Registro temperature con non conformità automatiche
+- [x] Registro controlli operativi
+- [x] Gestione non conformità
 - [ ] Edge Function `close-blast-cycle` per chiusura automatica
 - [ ] Notifiche push per scadenze e non conformità
 - [ ] Esportazione PDF report (jsPDF o React-PDF)
 - [ ] Grafici dashboard manager (Recharts)
 - [ ] Modalità offline (Service Worker + IndexedDB)
 - [ ] Test E2E (Playwright)
-- [ ] HACCP Piano di Autocontrollo completo (CCP, limiti critici)
+- [ ] Audit trail automatico via trigger DB
 
 ---
 
@@ -234,7 +249,7 @@ Il modulo `lib/utils/compliance.ts` implementa:
 
 > Questo file è pensato per essere letto da qualsiasi AI o sviluppatore che riprenda il progetto.
 
-**Stack principale:** Next.js 14+ App Router, Supabase, Zustand, Zod, Vanilla CSS  
+**Stack principale:** Next.js 16 App Router, Supabase, Zustand, Zod, Vanilla CSS  
 **Pattern chiave:** Route groups `(kiosk)` e `(dashboard)`, Supabase Realtime subscriptions, bcrypt PIN auth  
 **Conversazione originale:** Session ID `e3dda721-daf2-4404-b7f0-a8d3b7707edb`
 

@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { formatDate, formatDateTime } from '@/lib/utils/formatting'
 
@@ -12,6 +12,9 @@ export default function ReportPage() {
   const [data, setData] = useState<{
     blastLogs: Record<string, unknown>[]
     supplierBatches: Record<string, unknown>[]
+    temperatureLogs: Record<string, unknown>[]
+    operationalChecks: Record<string, unknown>[]
+    nonConformities: Record<string, unknown>[]
     nonCompliant: number
     totalCycles: number
   } | null>(null)
@@ -23,9 +26,9 @@ export default function ReportPage() {
     const start = new Date(year, mon - 1, 1).toISOString()
     const end = new Date(year, mon, 0, 23, 59, 59).toISOString()
 
-    const [blastRes, supplierRes] = await Promise.all([
+    const [blastRes, supplierRes, tempRes, checksRes, ncRes] = await Promise.all([
       (supabase.from('blast_chiller_logs') as any)
-        .select('id, cycle_type, start_time, end_time, start_temp, end_temp, target_time_minutes, is_compliant, corrective_action, operator_id, notes, created_at, internal_batch_id, staff_members(first_name, last_name), internal_batches(name)')
+        .select('id, cycle_type, start_time, end_time, start_temp, end_temp, target_temp, target_time_minutes, is_compliant, corrective_action, operator_id, notes, created_at, internal_batch_id, staff_members(first_name, last_name), internal_batches(name)')
         .gte('created_at', start)
         .lte('created_at', end)
         .order('start_time'),
@@ -34,13 +37,34 @@ export default function ReportPage() {
         .gte('created_at', start)
         .lte('created_at', end)
         .order('created_at'),
+      (supabase.from('temperature_logs') as any)
+        .select('*')
+        .gte('recorded_at', start)
+        .lte('recorded_at', end)
+        .order('recorded_at'),
+      (supabase.from('operational_checks') as any)
+        .select('*')
+        .gte('checked_at', start)
+        .lte('checked_at', end)
+        .order('checked_at'),
+      (supabase.from('non_conformities') as any)
+        .select('*')
+        .gte('detected_at', start)
+        .lte('detected_at', end)
+        .order('detected_at'),
     ])
 
     const blastLogs = (blastRes.data ?? []) as Record<string, unknown>[]
     const supplierBatches = (supplierRes.data ?? []) as Record<string, unknown>[]
+    const temperatureLogs = (tempRes.data ?? []) as Record<string, unknown>[]
+    const operationalChecks = (checksRes.data ?? []) as Record<string, unknown>[]
+    const nonConformities = (ncRes.data ?? []) as Record<string, unknown>[]
     const nonCompliant = blastLogs.filter(l => !l.is_compliant).length
+      + supplierBatches.filter(l => !l.is_compliant).length
+      + temperatureLogs.filter(l => !l.is_compliant).length
+      + operationalChecks.filter(l => !l.is_compliant).length
 
-    setData({ blastLogs, supplierBatches, nonCompliant, totalCycles: blastLogs.length })
+    setData({ blastLogs, supplierBatches, temperatureLogs, operationalChecks, nonConformities, nonCompliant, totalCycles: blastLogs.length })
     setLoading(false)
   }
 
@@ -97,6 +121,18 @@ export default function ReportPage() {
               <div className="kpi-label">Fornitori Registrati</div>
               <div className="kpi-value">{data.supplierBatches.length}</div>
             </div>
+            <div className="kpi-card kpi-card--primary">
+              <div className="kpi-label">Temperature</div>
+              <div className="kpi-value">{data.temperatureLogs.length}</div>
+            </div>
+            <div className="kpi-card kpi-card--success">
+              <div className="kpi-label">Controlli Operativi</div>
+              <div className="kpi-value">{data.operationalChecks.length}</div>
+            </div>
+            <div className={`kpi-card kpi-card--${data.nonConformities.filter(n => n.status !== 'closed').length > 0 ? 'danger' : 'success'}`}>
+              <div className="kpi-label">NC Aperte</div>
+              <div className="kpi-value">{data.nonConformities.filter(n => n.status !== 'closed').length}</div>
+            </div>
           </div>
 
           {/* Blast Chiller Table */}
@@ -147,7 +183,7 @@ export default function ReportPage() {
           </div>
 
           {/* Suppliers Table */}
-          <div>
+          <div style={{ marginBottom: 'var(--space-6)' }}>
             <h2 style={{ fontSize: 'var(--text-lg)', fontWeight: 700, marginBottom: 'var(--space-4)' }}>
               📦 Registro Fornitori
             </h2>
@@ -182,6 +218,110 @@ export default function ReportPage() {
                           {(b.is_compliant as boolean) ? '✅ Conforme' : '❌ Non Conforme'}
                         </span>
                       </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div style={{ marginBottom: 'var(--space-6)' }}>
+            <h2 style={{ fontSize: 'var(--text-lg)', fontWeight: 700, marginBottom: 'var(--space-4)' }}>
+              🌡️ Registro Temperature
+            </h2>
+            <div className="table-container">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Data</th>
+                    <th>Attrezzatura</th>
+                    <th>Temperatura</th>
+                    <th>Soglie</th>
+                    <th>Esito</th>
+                    <th>Azione correttiva</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.temperatureLogs.map((log) => (
+                    <tr key={log.id as string}>
+                      <td>{formatDateTime(log.recorded_at as string)}</td>
+                      <td style={{ fontWeight: 600 }}>{log.equipment_name as string}</td>
+                      <td>{log.temperature as number}°C</td>
+                      <td>{(log.min_threshold as number | null) ?? '—'} / {(log.max_threshold as number | null) ?? '—'} °C</td>
+                      <td>
+                        <span className={`badge ${(log.is_compliant as boolean) ? 'badge--success' : 'badge--danger'}`}>
+                          {(log.is_compliant as boolean) ? 'Conforme' : 'Fuori soglia'}
+                        </span>
+                      </td>
+                      <td>{(log.corrective_action as string) ?? '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div style={{ marginBottom: 'var(--space-6)' }}>
+            <h2 style={{ fontSize: 'var(--text-lg)', fontWeight: 700, marginBottom: 'var(--space-4)' }}>
+              🧽 Controlli Operativi
+            </h2>
+            <div className="table-container">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Data</th>
+                    <th>Tipo</th>
+                    <th>Area</th>
+                    <th>Voce</th>
+                    <th>Esito</th>
+                    <th>Azione correttiva</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.operationalChecks.map((check) => (
+                    <tr key={check.id as string}>
+                      <td>{formatDateTime(check.checked_at as string)}</td>
+                      <td>{check.check_type as string}</td>
+                      <td>{check.area as string}</td>
+                      <td style={{ fontWeight: 600 }}>{check.item as string}</td>
+                      <td>
+                        <span className={`badge ${(check.is_compliant as boolean) ? 'badge--success' : 'badge--danger'}`}>
+                          {(check.is_compliant as boolean) ? 'Conforme' : 'Non conforme'}
+                        </span>
+                      </td>
+                      <td>{(check.corrective_action as string) ?? '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div>
+            <h2 style={{ fontSize: 'var(--text-lg)', fontWeight: 700, marginBottom: 'var(--space-4)' }}>
+              ⚠️ Registro Non Conformità
+            </h2>
+            <div className="table-container">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Data</th>
+                    <th>Origine</th>
+                    <th>Titolo</th>
+                    <th>Gravità</th>
+                    <th>Stato</th>
+                    <th>Azione correttiva</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.nonConformities.map((nc) => (
+                    <tr key={nc.id as string}>
+                      <td>{formatDateTime(nc.detected_at as string)}</td>
+                      <td>{nc.source_type as string}</td>
+                      <td style={{ fontWeight: 600 }}>{nc.title as string}</td>
+                      <td>{nc.severity as string}</td>
+                      <td>{nc.status as string}</td>
+                      <td>{(nc.corrective_action as string) ?? (nc.immediate_action as string) ?? '—'}</td>
                     </tr>
                   ))}
                 </tbody>
