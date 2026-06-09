@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -8,14 +8,22 @@ import { createClient } from '@/lib/supabase/client'
 import { useStaffStore } from '@/store/staffStore'
 import { useToastStore } from '@/store/toastStore'
 import Link from 'next/link'
+import type { Database } from '@/types/database'
 
 const schema = z.object({
   name: z.string().min(2, 'Nome obbligatorio (min. 2 caratteri)'),
   description: z.string().optional(),
+  allergen_notes: z.string().optional(),
+  quantity: z.preprocess(
+    value => value === '' || value === null ? undefined : Number(value),
+    z.number().positive().optional()
+  ),
+  unit: z.string().optional(),
   expires_hours: z.number().min(1, 'Minimo 1 ora').max(720, 'Massimo 30 giorni'),
 })
 
 type FormData = z.infer<typeof schema>
+type SupplierBatch = Database['public']['Tables']['supplier_batches']['Row']
 
 export default function NuovoLottoPage() {
   const router = useRouter()
@@ -23,9 +31,21 @@ export default function NuovoLottoPage() {
   const { currentStaff } = useStaffStore()
   const { addToast } = useToastStore()
   const [loading, setLoading] = useState(false)
+  const [supplierBatches, setSupplierBatches] = useState<SupplierBatch[]>([])
+  const [selectedSupplierIds, setSelectedSupplierIds] = useState<string[]>([])
+
+  useEffect(() => {
+    supabase
+      .from('supplier_batches')
+      .select('*')
+      .eq('accepted', true)
+      .order('created_at', { ascending: false })
+      .limit(30)
+      .then(({ data }) => setSupplierBatches(data ?? []))
+  }, [])
 
   const { register, handleSubmit, formState: { errors } } = useForm<FormData>({
-    resolver: zodResolver(schema),
+    resolver: zodResolver(schema) as any,
     defaultValues: { expires_hours: 24 },
   })
 
@@ -33,17 +53,37 @@ export default function NuovoLottoPage() {
     setLoading(true)
     const expires_at = new Date(Date.now() + data.expires_hours * 3600000).toISOString()
 
-    const { error } = await (supabase.from('internal_batches') as any).insert({
+    const { data: inserted, error } = await (supabase.from('internal_batches') as any).insert({
       name: data.name,
       description: data.description ?? null,
+      allergen_notes: data.allergen_notes ?? null,
+      shelf_life_hours: data.expires_hours,
+      quantity: data.quantity ?? null,
+      unit: data.unit || null,
+      source_supplier_batch_ids: selectedSupplierIds,
       expires_at,
       prepared_by: currentStaff?.id ?? null,
-    })
+    }).select().single()
 
     if (error) {
       addToast({ type: 'error', message: `Errore: ${error.message}` })
       setLoading(false)
       return
+    }
+
+    if (inserted && selectedSupplierIds.length > 0) {
+      const rows = supplierBatches
+        .filter(batch => selectedSupplierIds.includes(batch.id))
+        .map(batch => ({
+          internal_batch_id: inserted.id,
+          supplier_batch_id: batch.id,
+          ingredient_name: batch.product_name,
+          notes: batch.original_lot_code ? `Lotto fornitore ${batch.original_lot_code}` : null,
+        }))
+
+      if (rows.length > 0) {
+        await (supabase.from('internal_batch_ingredients') as any).insert(rows)
+      }
     }
 
     addToast({ type: 'success', message: '✅ Lotto creato! Etichetta QR disponibile nella lista.' })
@@ -80,6 +120,57 @@ export default function NuovoLottoPage() {
           <div className="form-group">
             <label className="form-label">Descrizione</label>
             <textarea {...register('description')} className="input" placeholder="Ingredienti, note…" rows={3} />
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-4)' }}>
+            <div className="form-group">
+              <label className="form-label">Quantità</label>
+              <input type="number" step="0.01" {...register('quantity')} className="input" placeholder="es. 4.5" />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Unità</label>
+              <select {...register('unit')} className="input">
+                <option value="">—</option>
+                <option value="kg">kg</option>
+                <option value="g">g</option>
+                <option value="l">l</option>
+                <option value="porzioni">porzioni</option>
+                <option value="pezzi">pezzi</option>
+              </select>
+            </div>
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Allergeni / note etichetta</label>
+            <textarea {...register('allergen_notes')} className="input" placeholder="es. contiene latte, sedano; possibile traccia frutta a guscio" rows={2} />
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Lotti fornitore usati</label>
+            {supplierBatches.length === 0 ? (
+              <div style={{ color: 'var(--color-text-muted)', fontSize: 'var(--text-sm)' }}>
+                Nessun lotto fornitore recente disponibile.
+              </div>
+            ) : (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 'var(--space-2)' }}>
+                {supplierBatches.map(batch => {
+                  const selected = selectedSupplierIds.includes(batch.id)
+                  return (
+                    <button
+                      key={batch.id}
+                      type="button"
+                      className={`btn btn--sm ${selected ? 'btn--primary' : 'btn--secondary'}`}
+                      style={{ justifyContent: 'flex-start', whiteSpace: 'normal', minHeight: 48 }}
+                      onClick={() => setSelectedSupplierIds(prev =>
+                        selected ? prev.filter(id => id !== batch.id) : [...prev, batch.id]
+                      )}
+                    >
+                      {batch.product_name} · {batch.original_lot_code ?? batch.supplier_name}
+                    </button>
+                  )
+                })}
+              </div>
+            )}
           </div>
 
           <div className="form-group">

@@ -3,7 +3,6 @@ import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useToastStore } from '@/store/toastStore'
 import { ROLE_LABELS } from '@/lib/utils/formatting'
-import { hashPin } from '@/lib/auth/pin'
 import type { Database } from '@/types/database'
 
 type StaffMember = Database['public']['Tables']['staff_members']['Row']
@@ -13,54 +12,136 @@ export default function StaffPage() {
   const { addToast } = useToastStore()
   const [staff, setStaff] = useState<StaffMember[]>([])
   const [loading, setLoading] = useState(true)
-  const [showForm, setShowForm] = useState(false)
-  const [form, setForm] = useState({ first_name: '', last_name: '', role: 'cook' as StaffMember['role'], pin: '' })
+  
+  // Create form state
+  const [showCreateForm, setShowCreateForm] = useState(false)
+  const [createForm, setCreateForm] = useState({ first_name: '', last_name: '', role: 'cook' as StaffMember['role'], pin: '' })
+  
+  // Edit form state
+  const [editingMember, setEditingMember] = useState<StaffMember | null>(null)
+  const [editForm, setEditForm] = useState({ first_name: '', last_name: '', role: 'cook' as StaffMember['role'], pin: '' })
+  
   const [saving, setSaving] = useState(false)
 
-  useEffect(() => {
-    supabase
+  const loadStaff = async () => {
+    setLoading(true)
+    const { data } = await supabase
       .from('staff_members')
       .select('*')
       .order('first_name')
-      .then(({ data }) => { setStaff(data ?? []); setLoading(false) })
+    setStaff((data as StaffMember[]) ?? [])
+    setLoading(false)
+  }
+
+  useEffect(() => {
+    loadStaff()
   }, [])
 
   const handleCreate = async () => {
-    if (!form.first_name || !form.last_name || !form.pin || form.pin.length < 4) {
-      addToast({ type: 'error', message: 'Compila tutti i campi. PIN minimo 4 cifre.' })
+    if (!createForm.first_name || !createForm.last_name || !createForm.pin || createForm.pin.length < 4) {
+      addToast({ type: 'error', message: 'Compila tutti i campi obbligatori. PIN minimo 4 cifre.' })
       return
     }
     setSaving(true)
-    const res = await fetch('/api/hash-pin', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ pin: form.pin }),
-    })
-    const { hash } = await res.json()
+    try {
+      const res = await fetch('/api/hash-pin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pin: createForm.pin }),
+      })
+      const { hash } = await res.json()
 
-    type StaffInsert = Database['public']['Tables']['staff_members']['Insert']
-    const insertData: StaffInsert = {
-      first_name: form.first_name,
-      last_name: form.last_name,
-      role: form.role,
-      pin_hash: hash,
+      type StaffInsert = Database['public']['Tables']['staff_members']['Insert']
+      const insertData: StaffInsert = {
+        first_name: createForm.first_name,
+        last_name: createForm.last_name,
+        role: createForm.role,
+        pin_hash: hash,
+      }
+      
+      const { data, error } = await (supabase.from('staff_members') as any)
+        .insert(insertData)
+        .select()
+        .single()
+
+      if (error) {
+        addToast({ type: 'error', message: `Errore creazione: ${error.message}` })
+      } else {
+        setStaff(p => [...p, data as StaffMember])
+        addToast({ type: 'success', message: `✅ Staff ${createForm.first_name} creato!` })
+        setShowCreateForm(false)
+        setCreateForm({ first_name: '', last_name: '', role: 'cook', pin: '' })
+      }
+    } catch (e: any) {
+      addToast({ type: 'error', message: `Errore: ${e.message}` })
     }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const { data, error } = await (supabase.from('staff_members') as any).insert(insertData).select().single()
+    setSaving(false)
+  }
 
-    if (error) {
-      addToast({ type: 'error', message: `Errore: ${error.message}` })
-    } else {
-      setStaff(p => [...p, data])
-      addToast({ type: 'success', message: `✅ Staff ${form.first_name} creato!` })
-      setShowForm(false)
-      setForm({ first_name: '', last_name: '', role: 'cook', pin: '' })
+  const handleStartEdit = (member: StaffMember) => {
+    setEditingMember(member)
+    setEditForm({
+      first_name: member.first_name,
+      last_name: member.last_name,
+      role: member.role,
+      pin: '', // Lascia vuoto se non vuole cambiare PIN
+    })
+    setShowCreateForm(false)
+  }
+
+  const handleSaveEdit = async () => {
+    if (!editingMember) return
+    if (!editForm.first_name || !editForm.last_name) {
+      addToast({ type: 'error', message: 'Nome e Cognome sono obbligatori.' })
+      return
+    }
+    if (editForm.pin && editForm.pin.length < 4) {
+      addToast({ type: 'error', message: 'Il PIN deve essere di almeno 4 cifre.' })
+      return
+    }
+
+    setSaving(true)
+    try {
+      let hash = null
+      if (editForm.pin) {
+        const res = await fetch('/api/hash-pin', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pin: editForm.pin }),
+        })
+        const data = await res.json()
+        hash = data.hash
+      }
+
+      const updateData: any = {
+        first_name: editForm.first_name,
+        last_name: editForm.last_name,
+        role: editForm.role,
+      }
+      if (hash) {
+        updateData.pin_hash = hash
+      }
+
+      const { data, error } = await (supabase.from('staff_members') as any)
+        .update(updateData)
+        .eq('id', editingMember.id)
+        .select()
+        .single()
+
+      if (error) {
+        addToast({ type: 'error', message: `Errore modifica: ${error.message}` })
+      } else {
+        setStaff(p => p.map(s => s.id === editingMember.id ? (data as StaffMember) : s))
+        addToast({ type: 'success', message: `✅ Staff ${editForm.first_name} modificato!` })
+        setEditingMember(null)
+      }
+    } catch (e: any) {
+      addToast({ type: 'error', message: `Errore: ${e.message}` })
     }
     setSaving(false)
   }
 
   const toggleActive = async (member: StaffMember) => {
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const { error } = await (supabase.from('staff_members') as any)
       .update({ is_active: !member.is_active })
       .eq('id', member.id)
@@ -68,6 +149,8 @@ export default function StaffPage() {
     if (!error) {
       setStaff(p => p.map(s => s.id === member.id ? { ...s, is_active: !s.is_active } : s))
       addToast({ type: 'info', message: `${member.first_name} ${member.is_active ? 'disattivato' : 'attivato'}` })
+    } else {
+      addToast({ type: 'error', message: `Errore: ${error.message}` })
     }
   }
 
@@ -78,12 +161,15 @@ export default function StaffPage() {
           <h1 className="page-title">👤 Gestione Staff</h1>
           <p className="page-subtitle">{staff.length} membri del personale</p>
         </div>
-        <button className="btn btn--primary" onClick={() => setShowForm(s => !s)}>
-          {showForm ? '✕ Annulla' : '+ Nuovo Staff'}
-        </button>
+        {!editingMember && (
+          <button className="btn btn--primary" onClick={() => { setShowCreateForm(s => !s); setEditingMember(null) }}>
+            {showCreateForm ? '✕ Annulla' : '+ Nuovo Staff'}
+          </button>
+        )}
       </div>
 
-      {showForm && (
+      {/* Form di Creazione */}
+      {showCreateForm && (
         <div className="card card--elevated" style={{ marginBottom: 'var(--space-6)' }}>
           <h2 style={{ marginBottom: 'var(--space-5)' }}>Nuovo Membro Staff</h2>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 'var(--space-4)' }}>
@@ -91,8 +177,8 @@ export default function StaffPage() {
               <label className="form-label">Nome *</label>
               <input
                 className="input"
-                value={form.first_name}
-                onChange={e => setForm(f => ({ ...f, first_name: e.target.value }))}
+                value={createForm.first_name}
+                onChange={e => setCreateForm(f => ({ ...f, first_name: e.target.value }))}
                 placeholder="Nome"
               />
             </div>
@@ -100,8 +186,8 @@ export default function StaffPage() {
               <label className="form-label">Cognome *</label>
               <input
                 className="input"
-                value={form.last_name}
-                onChange={e => setForm(f => ({ ...f, last_name: e.target.value }))}
+                value={createForm.last_name}
+                onChange={e => setCreateForm(f => ({ ...f, last_name: e.target.value }))}
                 placeholder="Cognome"
               />
             </div>
@@ -109,8 +195,8 @@ export default function StaffPage() {
               <label className="form-label">Ruolo</label>
               <select
                 className="input"
-                value={form.role}
-                onChange={e => setForm(f => ({ ...f, role: e.target.value as StaffMember['role'] }))}
+                value={createForm.role}
+                onChange={e => setCreateForm(f => ({ ...f, role: e.target.value as StaffMember['role'] }))}
               >
                 <option value="chef">Chef</option>
                 <option value="cook">Cuoco</option>
@@ -125,15 +211,74 @@ export default function StaffPage() {
                 type="password"
                 inputMode="numeric"
                 maxLength={6}
-                value={form.pin}
-                onChange={e => setForm(f => ({ ...f, pin: e.target.value.replace(/\D/g, '') }))}
+                value={createForm.pin}
+                onChange={e => setCreateForm(f => ({ ...f, pin: e.target.value.replace(/\D/g, '') }))}
                 placeholder="••••"
               />
             </div>
           </div>
-          <div style={{ marginTop: 'var(--space-4)', display: 'flex', justifyContent: 'flex-end' }}>
+          <div style={{ marginTop: 'var(--space-4)', display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-2)' }}>
+            <button className="btn btn--secondary" onClick={() => setShowCreateForm(false)}>Annulla</button>
             <button className="btn btn--primary" onClick={handleCreate} disabled={saving}>
               {saving ? <><div className="spinner" style={{ width: 18, height: 18 }} /> Salvataggio…</> : '💾 Crea Staff'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Form di Modifica */}
+      {editingMember && (
+        <div className="card card--elevated" style={{ marginBottom: 'var(--space-6)', border: '1px solid var(--color-primary)' }}>
+          <h2 style={{ marginBottom: 'var(--space-5)' }}>Modifica Staff: {editingMember.first_name} {editingMember.last_name}</h2>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 'var(--space-4)' }}>
+            <div className="form-group">
+              <label className="form-label">Nome *</label>
+              <input
+                className="input"
+                value={editForm.first_name}
+                onChange={e => setEditForm(f => ({ ...f, first_name: e.target.value }))}
+                placeholder="Nome"
+              />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Cognome *</label>
+              <input
+                className="input"
+                value={editForm.last_name}
+                onChange={e => setEditForm(f => ({ ...f, last_name: e.target.value }))}
+                placeholder="Cognome"
+              />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Ruolo</label>
+              <select
+                className="input"
+                value={editForm.role}
+                onChange={e => setEditForm(f => ({ ...f, role: e.target.value as StaffMember['role'] }))}
+              >
+                <option value="chef">Chef</option>
+                <option value="cook">Cuoco</option>
+                <option value="cleaner">Addetto Pulizie</option>
+                <option value="manager">Manager</option>
+              </select>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Nuovo PIN (lascia vuoto per non cambiarlo)</label>
+              <input
+                className="input"
+                type="password"
+                inputMode="numeric"
+                maxLength={6}
+                value={editForm.pin}
+                onChange={e => setEditForm(f => ({ ...f, pin: e.target.value.replace(/\D/g, '') }))}
+                placeholder="••••"
+              />
+            </div>
+          </div>
+          <div style={{ marginTop: 'var(--space-4)', display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-2)' }}>
+            <button className="btn btn--secondary" onClick={() => setEditingMember(null)}>Annulla</button>
+            <button className="btn btn--primary" onClick={handleSaveEdit} disabled={saving}>
+              {saving ? <><div className="spinner" style={{ width: 18, height: 18 }} /> Salvataggio…</> : '💾 Salva Modifiche'}
             </button>
           </div>
         </div>
@@ -167,12 +312,21 @@ export default function StaffPage() {
                     </span>
                   </td>
                   <td>
-                    <button
-                      className={`btn btn--sm ${s.is_active ? 'btn--secondary' : 'btn--success'}`}
-                      onClick={() => toggleActive(s)}
-                    >
-                      {s.is_active ? 'Disattiva' : 'Attiva'}
-                    </button>
+                    <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+                      <button
+                        className="btn btn--sm btn--secondary"
+                        onClick={() => handleStartEdit(s)}
+                      >
+                        ✏️ Modifica
+                      </button>
+                      <button
+                        className={`btn btn--sm ${s.is_active ? 'btn--ghost' : 'btn--success'}`}
+                        onClick={() => toggleActive(s)}
+                        style={{ color: s.is_active ? 'var(--color-danger)' : undefined }}
+                      >
+                        {s.is_active ? 'Disattiva' : 'Attiva'}
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}

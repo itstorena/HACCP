@@ -41,7 +41,7 @@ export default function NuovoAbbattimentoPage() {
   }, [])
 
   const { register, handleSubmit, watch, formState: { errors } } = useForm<FormData>({
-    resolver: zodResolver(schema),
+    resolver: zodResolver(schema) as any,
     defaultValues: { cycle_type: 'positive_3c' },
   })
 

@@ -44,7 +44,7 @@ export default function ChiudiCicloPage() {
   }, [id])
 
   const { register, handleSubmit, watch, formState: { errors } } = useForm<FormData>({
-    resolver: zodResolver(schema),
+    resolver: zodResolver(schema) as any,
   })
 
   const endTemp = watch('end_temp')

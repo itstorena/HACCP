@@ -3,7 +3,7 @@ import { useEffect, useState, useCallback } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { formatDate } from '@/lib/utils/formatting'
-import { RISK_LABELS } from '@/lib/utils/formatting'
+import { RISK_LABELS, formatTemp } from '@/lib/utils/formatting'
 import type { Database } from '@/types/database'
 import type { RealtimePostgresChangesPayload } from '@supabase/supabase-js'
 
@@ -113,6 +113,8 @@ export default function FornitoriPage() {
                 <th>Prodotto</th>
                 <th>Fornitore</th>
                 <th>N° Lotto</th>
+                <th>DDT</th>
+                <th>T. Ric.</th>
                 <th>Consegna</th>
                 <th>Scadenza</th>
                 <th>Rischio</th>
@@ -129,6 +131,8 @@ export default function FornitoriPage() {
                       {b.original_lot_code ?? '—'}
                     </code>
                   </td>
+                  <td style={{ color: 'var(--color-text-muted)' }}>{b.document_number ?? '—'}</td>
+                  <td>{formatTemp(b.received_temp)}</td>
                   <td style={{ color: 'var(--color-text-muted)' }}>{formatDate(b.delivery_date)}</td>
                   <td style={{ color: isExpired(b.expiry_date) ? 'var(--color-danger)' : isExpiringSoon(b.expiry_date) ? 'var(--color-warning)' : undefined }}>
                     {formatDate(b.expiry_date)}
@@ -142,7 +146,7 @@ export default function FornitoriPage() {
                   </td>
                   <td>
                     <span className={`badge ${b.is_compliant ? 'badge--success' : 'badge--danger'}`}>
-                      {b.is_compliant ? 'Conforme' : 'Non Conforme'}
+                      {b.accepted === false ? 'Rifiutato' : b.is_compliant ? 'Conforme' : 'Non Conforme'}
                     </span>
                   </td>
                 </tr>

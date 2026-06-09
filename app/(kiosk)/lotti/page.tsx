@@ -113,6 +113,15 @@ export default function LottiPage() {
                 <div style={{ fontSize: 'var(--text-xs)', color: 'var(--color-text-muted)', display: 'flex', flexDirection: 'column', gap: 'var(--space-1)', marginBottom: 'var(--space-4)' }}>
                   <span>📅 Preparato: {formatDateTime(batch.prepared_at)}</span>
                   <span>⏰ Scade: {formatDateTime(batch.expires_at)}</span>
+                  {(batch.quantity || batch.unit) && (
+                    <span>⚖️ Quantità: {batch.quantity ?? '—'} {batch.unit ?? ''}</span>
+                  )}
+                  {batch.source_supplier_batch_ids.length > 0 && (
+                    <span>🔗 Materie prime collegate: {batch.source_supplier_batch_ids.length}</span>
+                  )}
+                  {batch.allergen_notes && (
+                    <span>⚠️ Allergeni: {batch.allergen_notes}</span>
+                  )}
                   <code style={{ fontSize: '0.7rem', background: 'var(--color-surface-2)', padding: '2px 6px', borderRadius: 4, width: 'fit-content' }}>
                     {batch.qr_code_token.slice(0, 16)}…
                   </code>
@@ -148,6 +157,12 @@ export default function LottiPage() {
               <div className="qr-label__info">
                 Prep.: {formatDateTime(selectedBatch.prepared_at)}<br />
                 Scad.: {formatDateTime(selectedBatch.expires_at)}
+                {selectedBatch.allergen_notes && (
+                  <>
+                    <br />
+                    Allergeni: {selectedBatch.allergen_notes}
+                  </>
+                )}
               </div>
               <div style={{ fontSize: '0.65rem', color: '#888', fontFamily: 'monospace' }}>
                 {selectedBatch.qr_code_token}
